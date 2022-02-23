@@ -10,3 +10,14 @@ instances/*.cnf.xz
 instances/*.uri
 upload.sh
 download.sh
+
+.idea/
+cmake-build-debug/
+
+test_job.json
+test_log/
+
+lib/glucose-syrup-4.1.tgz
+lib/mergesat-patched.tar.gz
+lib/yalsat-03v.zip
+
