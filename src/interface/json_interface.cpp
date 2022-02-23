@@ -45,9 +45,17 @@ JsonInterface::Result JsonInterface::handle(nlohmann::json& inputJson,
         appl = JobDescription::Application::DUMMY;
         if (inputJson.contains("application")) {
             auto appStr = inputJson["application"].get<std::string>();
-            appl = appStr == "SAT" ? 
-                (incremental ? JobDescription::Application::INCREMENTAL_SAT : JobDescription::Application::ONESHOT_SAT)
-                : JobDescription::Application::DUMMY;
+            if (appStr == "SAT") {
+                if (incremental) {
+                    appl = JobDescription::Application::INCREMENTAL_SAT;
+                } else {
+                    appl = JobDescription::Application::ONESHOT_SAT;
+                }
+            } else if (appStr == "TOHTN") {
+                appl = JobDescription::Application::TOHTN;
+            } else {
+                appl = JobDescription::Application::DUMMY;
+            }
         }
 
         if (inputJson.contains("interrupt") && inputJson["interrupt"].get<bool>()) {

@@ -17,6 +17,7 @@
 #include "util/sys/watchdog.hpp"
 #include "util/sys/proc.hpp"
 #include "util/data_statistics.hpp"
+#include "app/tohtn/tohtn_job.hpp"
 
 JobDatabase::JobDatabase(Parameters& params, MPI_Comm& comm, WorkerSysState& sysstate):
         _params(params), _comm(comm), _sys_state(sysstate) {
@@ -27,7 +28,7 @@ JobDatabase::JobDatabase(Parameters& params, MPI_Comm& comm, WorkerSysState& sys
     _current_job = NULL;
     _load_factor = params.loadFactor();
     assert(0 < _load_factor && _load_factor <= 1.0);
-    _balance_period = params.balancingPeriod();       
+    _balance_period = params.balancingPeriod();
 
     // Initialize balancer
     _balancer = std::unique_ptr<EventDrivenBalancer>(new EventDrivenBalancer(_comm, _params));
@@ -38,16 +39,20 @@ JobDatabase::JobDatabase(Parameters& params, MPI_Comm& comm, WorkerSysState& sys
 Job& JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescription::Application application) {
 
     switch (application) {
-    case JobDescription::Application::ONESHOT_SAT:
-    case JobDescription::Application::INCREMENTAL_SAT:
-        if (_params.applicationSpawnMode() == "fork") {
-            _jobs[jobId] = new ForkedSatJob(_params, commSize, worldRank, jobId, application);
-        } else {
-            _jobs[jobId] = new ThreadedSatJob(_params, commSize, worldRank, jobId, application);
-        }
-        break;
-    case JobDescription::Application::DUMMY:
-        _jobs[jobId] = new DummyJob(_params, commSize, worldRank, jobId);
+        case JobDescription::Application::ONESHOT_SAT:
+        case JobDescription::Application::INCREMENTAL_SAT:
+            if (_params.applicationSpawnMode() == "fork") {
+                _jobs[jobId] = new ForkedSatJob(_params, commSize, worldRank, jobId, application);
+            } else {
+                _jobs[jobId] = new ThreadedSatJob(_params, commSize, worldRank, jobId, application);
+            }
+            break;
+        case JobDescription::Application::DUMMY:
+            _jobs[jobId] = new DummyJob(_params, commSize, worldRank, jobId);
+            break;
+        case JobDescription::Application::TOHTN:
+            _jobs[jobId] = new TohtnJob(_params, commSize, worldRank, jobId);
+            break;
     }
     _num_stored_jobs++;
     return *_jobs[jobId];
@@ -64,7 +69,7 @@ bool JobDatabase::appendRevision(int jobId, const std::shared_ptr<std::vector<ui
     if (job.hasDescription()) {
         if (rev != job.getMaxConsecutiveRevision()+1) {
             // Revision data would cause a "hole" in the list of job revision data
-            LOG(V1_WARN, "[WARN] #%i rev. %i inconsistent w/ max. consecutive rev. %i : discard desc. of size %i\n", 
+            LOG(V1_WARN, "[WARN] #%i rev. %i inconsistent w/ max. consecutive rev. %i : discard desc. of size %i\n",
                 jobId, rev, job.getMaxConsecutiveRevision(), description->size());
             return false;
         }
@@ -161,7 +166,7 @@ bool JobDatabase::isAdoptionOfferObsolete(const JobRequest& req, bool alreadyAcc
         LOG(V4_VVER, "%s : job inactive (%s)\n", req.toStr().c_str(), job.jobStateToStr());
         return true;
     }
-    if (req.requestedNodeIndex != job.getJobTree().getLeftChildIndex() 
+    if (req.requestedNodeIndex != job.getJobTree().getLeftChildIndex()
             && req.requestedNodeIndex != job.getJobTree().getRightChildIndex()) {
         // Requested node index is not a valid child index for this job
         LOG(V4_VVER, "%s : not a valid child index (any more)\n", job.toStr());
@@ -195,7 +200,7 @@ void JobDatabase::commit(JobRequest& req) {
         LOG(V3_VERB, "COMMIT %s -> #%i:%i\n", job.toStr(), req.jobId, req.requestedNodeIndex);
         job.commit(req);
         _has_commitment = true;
-        
+
         // Subscribe for volume updates for this job even if the job is not active yet
         // Also reserves a PE of space for this job in case this is a root node
         preregisterJobInBalancer(req.jobId);
@@ -209,7 +214,7 @@ void JobDatabase::initScheduler(JobRequest& req, std::function<void(const JobReq
     auto& job = get(req.jobId);
     auto key = std::pair<int, int>(req.jobId, req.requestedNodeIndex);
     if (!_schedulers.count(key)) {
-        _schedulers.emplace(key, 
+        _schedulers.emplace(key,
             job.constructScheduler([this, emitJobReq](const JobRequest& req, int tag, bool left, int dest) {
                 emitJobReq(req, tag, left, dest);
             })
@@ -271,7 +276,7 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
 
     // Decide whether job should be adopted or bounced to another node
     removedJob = -1;
-    
+
     // Already have another commitment?
     if (_has_commitment) {
         if (_coll_assign) _coll_assign->setStatusDirty();
@@ -281,7 +286,7 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
     // Does this node have a dormant root which is NOT this job?
     if (hasDormantRoot() && (
         !has(req.jobId)
-        || !get(req.jobId).getJobTree().isRoot() 
+        || !get(req.jobId).getJobTree().isRoot()
         || get(req.jobId).getState() != SUSPENDED
     )) {
         LOG(V4_VVER, "Reject %s : dormant root present\n", req.toStr().c_str());
@@ -332,10 +337,10 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
             // Current job must be a non-root leaf node
             Job& job = getActive();
             if (job.getState() == ACTIVE && !job.getJobTree().isRoot() && job.getJobTree().isLeaf()) {
-                
+
                 // Inform parent node of the original job  
                 LOG(V4_VVER, "Suspend %s ...\n", job.toStr());
-                LOG(V4_VVER, "... to adopt starving %s\n", 
+                LOG(V4_VVER, "... to adopt starving %s\n",
                                 toStr(req.jobId, req.requestedNodeIndex).c_str());
 
                 removedJob = job.getId();
@@ -363,7 +368,7 @@ void JobDatabase::reactivate(const JobRequest& req, int source) {
     job.updateJobTree(req.requestedNodeIndex, req.rootRank, req.requestingNodeRank);
     setLoad(1, req.jobId);
     assert(!hasCommitment(req.jobId));
-    LOG_ADD_SRC(V3_VERB, "RESUME %s", source, 
+    LOG_ADD_SRC(V3_VERB, "RESUME %s", source,
                 toStr(req.jobId, req.requestedNodeIndex).c_str());
     job.resume();
 
@@ -376,7 +381,7 @@ void JobDatabase::suspend(int jobId) {
     assert(has(jobId) && get(jobId).getState() == ACTIVE);
     Job& job = get(jobId);
     // Suspend (and possibly erase) job scheduler
-    suspendScheduler(job);    
+    suspendScheduler(job);
     job.suspend();
     setLoad(0, jobId);
     LOG(V3_VERB, "SUSPEND %s\n", job.toStr());
@@ -492,7 +497,7 @@ void JobDatabase::forgetOldJobs() {
 
     if (!_jobs.empty())
         LOG(V4_VVER, "contexts=%i descriptions=%i\n", _jobs.size(), numJobsWithDescription);
-    
+
     // Perform forgetting of jobs
     for (int jobId : jobsToForget) forget(jobId);
 }
@@ -514,7 +519,7 @@ void JobDatabase::forget(int jobId) {
 }
 
 std::vector<std::pair<JobRequest, int>>  JobDatabase::getDeferredRequestsToForward(float time) {
-    
+
     std::vector<std::pair<JobRequest, int>> result;
     for (auto& [deferredTime, senderRank, req] : _deferred_requests) {
         if (time - deferredTime < 1.0f) break;
@@ -580,7 +585,7 @@ bool JobDatabase::isBusyOrCommitted() const {
 
 bool JobDatabase::hasDormantRoot() const {
     for (auto& [_, job] : _jobs) {
-        if (job->getJobTree().isRoot() && job->getState() == SUSPENDED) 
+        if (job->getJobTree().isRoot() && job->getState() == SUSPENDED)
             return true;
     }
     return false;
@@ -601,7 +606,7 @@ std::vector<int> JobDatabase::getDormantJobs() const {
 bool JobDatabase::hasInactiveJobsWaitingForReactivation() const {
     if (!_params.reactivationScheduling()) return false;
     for (auto& [_, job] : _jobs) {
-        if (job->getState() == SUSPENDED && job->getJobTree().isWaitingForReactivation()) 
+        if (job->getState() == SUSPENDED && job->getJobTree().isWaitingForReactivation())
             return true;
     }
     return false;
@@ -619,7 +624,7 @@ JobRequest JobDatabase::loadPendingRootReactivationRequest() {
 }
 
 void JobDatabase::setPendingRootReactivationRequest(JobRequest&& req) {
-    assert(!hasPendingRootReactivationRequest() 
+    assert(!hasPendingRootReactivationRequest()
         || req.jobId == _pending_root_reactivate_request.value().jobId);
     _pending_root_reactivate_request = std::move(req);
 }
@@ -652,7 +657,7 @@ void JobDatabase::addRootRequest(const JobRequest& req) {
 }
 
 std::optional<JobRequest> JobDatabase::getRootRequest(int jobId) {
-    
+
     auto it = _root_requests.find(jobId);
     if (it == _root_requests.end()) return std::optional<JobRequest>();
 
@@ -667,9 +672,9 @@ void JobDatabase::runJanitor() {
 
     auto lg = Logger::getMainInstance().copy("<Janitor>", ".janitor");
     LOGGER(lg, V3_VERB, "tid=%lu\n", Proc::getTid());
-    
+
     while (_janitor.continueRunning() || _num_stored_jobs > 0) {
-    
+
         std::list<Job*> copy;
         {
             // Try to fetch the current jobs to free
@@ -679,14 +684,14 @@ void JobDatabase::runJanitor() {
             });
             if (!_janitor.continueRunning() && _jobs_to_free.empty() && _num_stored_jobs == 0)
                 break;
-            
+
             // Copy jobs to free to local list
             for (Job* job : _jobs_to_free) copy.push_back(job);
             _jobs_to_free.clear();
         }
 
         LOGGER(lg, V5_DEBG, "Found %i job(s) to delete\n", copy.size());
-        
+
         // Free each job
         for (Job* job : copy) {
             int id = job->getId();
@@ -713,7 +718,7 @@ JobDatabase::~JobDatabase() {
     // Collect all jobs from central job table
     std::vector<int> jobIds;
     for (auto idJobPair : _jobs) jobIds.push_back(idJobPair.first);
-    
+
     // Forget each job, move raw pointer to destruct queue
     for (int jobId : jobIds) {
         forget(jobId);
@@ -735,7 +740,7 @@ JobDatabase::~JobDatabase() {
 
     DataStatistics stats(std::move(_desire_latencies));
     stats.computeStats();
-    LOG(V3_VERB, "STATS treegrowth_latencies num:%ld min:%.6f max:%.6f med:%.6f mean:%.6f\n", 
+    LOG(V3_VERB, "STATS treegrowth_latencies num:%ld min:%.6f max:%.6f med:%.6f mean:%.6f\n",
         stats.num(), stats.min(), stats.max(), stats.median(), stats.mean());
     stats.logFullDataIntoFile(".treegrowth-latencies");
 }

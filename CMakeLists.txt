@@ -82,7 +82,7 @@ set(BASE_SOURCES ${BASE_SOURCES}
     src/util/logger.cpp src/util/option.cpp src/util/params.cpp src/util/permutation.cpp src/util/random.cpp src/util/sat_reader.cpp 
     src/util/sys/atomics.cpp src/util/sys/fileutils.cpp src/util/sys/process.cpp src/util/sys/proc.cpp src/util/sys/shared_memory.cpp src/util/sys/terminator.cpp src/util/sys/threading.cpp src/util/sys/thread_pool.cpp src/util/sys/timer.cpp src/util/sys/watchdog.cpp
     src/util/ringbuf/ringbuf.c
-)
+        src/app/tohtn/tohtn_reader.cpp src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp)
 
 
 # Library with source files common to mallob and mallob_sat_process
@@ -94,6 +94,16 @@ target_include_directories(mallob_commons PRIVATE ${BASE_INCLUDES})
 target_compile_options(mallob_commons PRIVATE ${BASE_COMPILEFLAGS})
 target_link_libraries(mallob_commons ${BASE_LIBS})
 
+# library: malleable TOHTN planner
+set(TOHTN_SOURCES ${TOHTN_SOURCES}
+        src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_reader.hpp
+        src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp)
+
+add_library(mallob_tohtn STATIC ${TOHTN_SOURCES})
+set_target_properties(mallob_tohtn PROPERTIES LINKER_LANGUAGE CXX)
+target_include_directories(mallob_tohtn PRIVATE ${BASE_INCLUDES})
+target_compile_options(mallob_tohtn PRIVATE ${BASE_COMPILEFLAGS})
+target_link_libraries(mallob_tohtn PRIVATE ${BASE_LIBS} mallob_commons)
 
 # Executables: mallob and mallob_sat_process
 
@@ -106,8 +116,9 @@ target_include_directories(mallob_sat_process PRIVATE ${BASE_INCLUDES})
 target_compile_options(mallob PRIVATE ${BASE_COMPILEFLAGS})
 target_compile_options(mallob_sat_process PRIVATE ${BASE_COMPILEFLAGS})
 
-target_link_libraries(mallob ${BASE_LIBS} mallob_commons)
+target_link_libraries(mallob ${BASE_LIBS} mallob_commons mallob_tohtn)
 target_link_libraries(mallob_sat_process ${BASE_LIBS} mallob_commons) 
+
 
 
 # Debug flags to find line numbers in stack traces etc.
