@@ -101,9 +101,9 @@ set(TOHTN_SOURCES ${TOHTN_SOURCES}
 
 add_library(mallob_tohtn STATIC ${TOHTN_SOURCES})
 set_target_properties(mallob_tohtn PROPERTIES LINKER_LANGUAGE CXX)
-target_include_directories(mallob_tohtn PRIVATE ${BASE_INCLUDES})
+target_include_directories(mallob_tohtn PRIVATE ${BASE_INCLUDES} ${PROJECT_SOURCE_DIR}/lib/pandaPIparser/include)
 target_compile_options(mallob_tohtn PRIVATE ${BASE_COMPILEFLAGS})
-target_link_libraries(mallob_tohtn PRIVATE ${BASE_LIBS} mallob_commons)
+target_link_libraries(mallob_tohtn PRIVATE ${BASE_LIBS} mallob_commons ${PROJECT_SOURCE_DIR}/lib/pandaPIparser/libpandaPIparser.a)
 
 # Executables: mallob and mallob_sat_process
 
