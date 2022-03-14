@@ -99,7 +99,33 @@ set(TOHTN_SOURCES ${TOHTN_SOURCES}
         src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_reader.hpp
         src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp)
 
-add_library(mallob_tohtn STATIC ${TOHTN_SOURCES})
+set(LILOTANE_SOURCES ${LILOTANE_SOURCES}
+        src/app/tohtn/lilotane/algo/arg_iterator.h src/app/tohtn/lilotane/algo/plan_writer.cpp
+        src/app/tohtn/lilotane/algo/plan_writer.h src/app/tohtn/lilotane/algo/plan_writer.cpp
+        src/app/tohtn/lilotane/algo/sample_arg_iterator.h
+
+        src/app/tohtn/lilotane/data/action.h src/app/tohtn/lilotane/data/action.cpp
+        src/app/tohtn/lilotane/data/fact_frame.h
+        src/app/tohtn/lilotane/data/htn_instance.h src/app/tohtn/lilotane/data/htn_instance.cpp
+        src/app/tohtn/lilotane/data/htn_op.h src/app/tohtn/lilotane/data/htn_op.cpp
+        src/app/tohtn/lilotane/data/op_table.h
+        src/app/tohtn/lilotane/data/reduction.h src/app/tohtn/lilotane/data/reduction.cpp
+        src/app/tohtn/lilotane/data/signature.h src/app/tohtn/lilotane/data/signature.cpp
+        src/app/tohtn/lilotane/data/plan.h
+        src/app/tohtn/lilotane/data/substitution.h src/app/tohtn/lilotane/data/substitution.cpp
+
+        src/app/tohtn/lilotane/util/ctre.hpp
+        src/app/tohtn/lilotane/util/hash.h
+        src/app/tohtn/lilotane/util/hashmap.h
+        src/app/tohtn/lilotane/util/log.h src/app/tohtn/lilotane/util/log.cpp
+        src/app/tohtn/lilotane/util/names.h src/app/tohtn/lilotane/util/names.cpp
+        src/app/tohtn/lilotane/util/params_lilotane.h src/app/tohtn/lilotane/util/params_lilotane.cpp
+        src/app/tohtn/lilotane/util/regex.h
+        src/app/tohtn/lilotane/util/robin_hood.h
+        src/app/tohtn/lilotane/util/timer_lilotane.h src/app/tohtn/lilotane/util/timer_lilotane.cpp)
+
+
+add_library(mallob_tohtn STATIC ${TOHTN_SOURCES} ${LILOTANE_SOURCES})
 set_target_properties(mallob_tohtn PROPERTIES LINKER_LANGUAGE CXX)
 target_include_directories(mallob_tohtn PRIVATE ${BASE_INCLUDES} ${PROJECT_SOURCE_DIR}/lib/pandaPIparser/include)
 target_compile_options(mallob_tohtn PRIVATE ${BASE_COMPILEFLAGS})

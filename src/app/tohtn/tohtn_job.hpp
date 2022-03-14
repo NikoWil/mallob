@@ -7,6 +7,21 @@
 
 
 #include "app/job.hpp"
+#include "app/tohtn/lilotane/data/htn_instance.h"
+
+#include <mutex>
+
+template <typename T>
+struct LockedVec {
+    std::mutex _mutex;
+    std::vector<T> _vec;
+};
+
+struct TohtnMessage {
+    std::vector<std::uint8_t> _payload;
+    int _mpi_tag;
+    int _dest;
+};
 
 class TohtnJob : public Job {
 public:
@@ -36,6 +51,10 @@ public:
 
 private:
     JobResult _result;
+    std::shared_ptr<HtnInstance> _htn;
+
+    LockedVec<TohtnMessage> _send_buf;
+    LockedVec<JobMessage> _recv_buf;
 };
 
 
