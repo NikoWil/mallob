@@ -11,7 +11,7 @@
 
 #include <mutex>
 
-template <typename T>
+template<typename T>
 struct LockedVec {
     std::mutex _mutex;
     std::vector<T> _vec;
@@ -23,9 +23,40 @@ struct TohtnMessage {
     int _dest;
 };
 
+class WaitableFlag {
+public:
+    WaitableFlag() : _should_suspend{false} {}
+
+    void suspend() {
+        std::unique_lock ul{_mutex};
+
+        _should_suspend = true;
+    }
+
+    void check_suspend() {
+        std::unique_lock ul{_mutex};
+        if (_should_suspend) {
+            _cond.wait(ul, [this]() { return !_should_suspend; });
+        }
+    }
+
+    void resume() {
+        std::unique_lock ul{_mutex};
+
+        _should_suspend = true;
+
+        _cond.notify_all();
+    }
+
+private:
+    bool _should_suspend;
+    std::condition_variable _cond;
+    std::mutex _mutex;
+};
+
 class TohtnJob : public Job {
 public:
-    TohtnJob(const Parameters& params, int commSize, int worldRank, int jobId);
+    TohtnJob(const Parameters &params, int commSize, int worldRank, int jobId);
 
     void appl_start() override;
 
@@ -37,13 +68,13 @@ public:
 
     int appl_solved() override;
 
-    JobResult&& appl_getResult() override;
+    JobResult &&appl_getResult() override;
 
     bool appl_wantsToBeginCommunication() override;
 
     void appl_beginCommunication() override;
 
-    void appl_communicate(int source, JobMessage& msg) override;
+    void appl_communicate(int source, JobMessage &msg) override;
 
     void appl_dumpStats() override;
 
@@ -52,6 +83,9 @@ public:
 private:
     JobResult _result;
     std::shared_ptr<HtnInstance> _htn;
+
+    std::thread _work_thread;
+    WaitableFlag _suspend_flag;
 
     LockedVec<TohtnMessage> _send_buf;
     LockedVec<JobMessage> _recv_buf;

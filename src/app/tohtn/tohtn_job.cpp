@@ -7,15 +7,15 @@
 #include "tohtn_job.hpp"
 #include "app/tohtn/lilotane/data/htn_instance.h"
 
-std::pair<std::string, std::string> extract_files(const JobDescription& description) {
+std::pair<std::string, std::string> extract_files(const JobDescription &description) {
     const int revision{description.getRevision()};
     const std::size_t payload_size{description.getFormulaPayloadSize(revision)};
-    const int* payload{description.getFormulaPayload(revision)};
+    const int *payload{description.getFormulaPayload(revision)};
     const int num_domain_chars{payload[payload_size - 2]};
     const int num_problem_chars{payload[payload_size - 1]};
 
-    const int* domain_payload{payload};
-    const int* problem_payload{payload + num_domain_chars};
+    const int *domain_payload{payload};
+    const int *problem_payload{payload + num_domain_chars};
 
     std::string domain;
     std::string problem;
@@ -32,10 +32,10 @@ std::pair<std::string, std::string> extract_files(const JobDescription& descript
 }
 
 TohtnJob::TohtnJob(const Parameters &params, int commSize, int worldRank, int jobId)
-    : Job(params, commSize, worldRank, jobId,JobDescription::Application::TOHTN) {}
+        : Job(params, commSize, worldRank, jobId, JobDescription::Application::TOHTN), _suspend_flag{false} {}
 
 void TohtnJob::appl_start() {
-    const auto [domain, problem] = extract_files(getDescription());
+    const auto[domain, problem] = extract_files(getDescription());
 
     std::stringstream id_stream;
     id_stream << "job-" << std::to_string(getDescription().getId()) << "_";
@@ -61,17 +61,25 @@ void TohtnJob::appl_start() {
 
     _htn = std::make_shared<HtnInstance>(HtnInstance{domain_file_name.str(), problem_file_name.str()});
 
-
+    _work_thread = std::thread{
+            [&]() {
+                while (true) {
+                    {
+                        _suspend_flag.check_suspend();
+                    }
+                }
+            }
+    };
 }
 
 // TODO: make the planner thread fall asleep and wait for some condition variable
 void TohtnJob::appl_suspend() {
-
+    _suspend_flag.suspend();
 }
 
 // TODO: signal the planner thread to resume on the condition variable
 void TohtnJob::appl_resume() {
-
+    _suspend_flag.resume();
 }
 
 // TODO: kill everything? (ze thread)
@@ -107,7 +115,7 @@ void TohtnJob::appl_beginCommunication() {
         return;
     }
 
-    for (auto& msg : _send_buf._vec) {
+    for (auto &msg: _send_buf._vec) {
         MyMpi::isend(msg._dest, msg._mpi_tag, std::move(msg._payload));
     }
 

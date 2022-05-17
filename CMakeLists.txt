@@ -97,7 +97,7 @@ target_link_libraries(mallob_commons ${BASE_LIBS})
 # library: malleable TOHTN planner
 set(TOHTN_SOURCES ${TOHTN_SOURCES}
         src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_reader.hpp
-        src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp)
+        src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp src/app/tohtn/tohtn_sysstate.hpp src/app/tohtn/tohtn_msg_tags.hpp)
 
 set(LILOTANE_SOURCES ${LILOTANE_SOURCES}
         src/app/tohtn/lilotane/algo/arg_iterator.h src/app/tohtn/lilotane/algo/plan_writer.cpp
