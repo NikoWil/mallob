@@ -82,7 +82,7 @@ set(BASE_SOURCES ${BASE_SOURCES}
     src/util/logger.cpp src/util/option.cpp src/util/params.cpp src/util/permutation.cpp src/util/random.cpp src/util/sat_reader.cpp 
     src/util/sys/atomics.cpp src/util/sys/fileutils.cpp src/util/sys/process.cpp src/util/sys/proc.cpp src/util/sys/shared_memory.cpp src/util/sys/terminator.cpp src/util/sys/threading.cpp src/util/sys/thread_pool.cpp src/util/sys/timer.cpp src/util/sys/watchdog.cpp
     src/util/ringbuf/ringbuf.c
-        src/app/tohtn/tohtn_reader.cpp src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp)
+        src/app/tohtn/tohtn_reader.cpp src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp src/app/tohtn/tohtn_simple_job.cpp src/app/tohtn/tohtn_simple_job.hpp)
 
 
 # Library with source files common to mallob and mallob_sat_process
@@ -97,7 +97,7 @@ target_link_libraries(mallob_commons ${BASE_LIBS})
 # library: malleable TOHTN planner
 set(TOHTN_SOURCES ${TOHTN_SOURCES}
         src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_reader.hpp
-        src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp src/app/tohtn/tohtn_sysstate.hpp src/app/tohtn/tohtn_msg_tags.hpp)
+        src/app/tohtn/tohtn_job.cpp src/app/tohtn/tohtn_job.hpp src/app/tohtn/tohtn_sysstate.hpp src/app/tohtn/tohtn_msg_tags.hpp src/app/tohtn/tohtn_simple_job.cpp src/app/tohtn/tohtn_simple_job.hpp src/app/tohtn/crowd/crowd_worker.hpp src/app/tohtn/tohtn_utils.cpp src/app/tohtn/tohtn_utils.hpp)
 
 set(LILOTANE_SOURCES ${LILOTANE_SOURCES}
         src/app/tohtn/lilotane/algo/arg_iterator.h src/app/tohtn/lilotane/algo/plan_writer.cpp
