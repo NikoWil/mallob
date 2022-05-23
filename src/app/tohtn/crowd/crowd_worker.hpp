@@ -9,8 +9,6 @@
 #ifndef MALLOB_CROWD_WORKER_HPP
 #define MALLOB_CROWD_WORKER_HPP
 
-#endif //MALLOB_CROWD_WORKER_HPP
-
 class HtnInstance;
 
 // TODO: params?
@@ -34,4 +32,4 @@ public:
 
 std::unique_ptr<SingleThreadedCrowdWorker> create_crowd_worker(std::shared_ptr<HtnInstance> htn);
 
-void print_plan(const std::vector<uint8_t>& encoded_plan);
+#endif //MALLOB_CROWD_WORKER_HPP

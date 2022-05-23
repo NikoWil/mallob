@@ -17,9 +17,9 @@
 #include "util/sys/watchdog.hpp"
 #include "util/sys/proc.hpp"
 #include "util/data_statistics.hpp"
-#include "app/tohtn/tohtn_job.hpp"
+#include "app/tohtn/tohtn_simple_job.hpp"
 
-JobDatabase::JobDatabase(Parameters& params, MPI_Comm& comm, WorkerSysState& sysstate):
+JobDatabase::JobDatabase(Parameters &params, MPI_Comm &comm, WorkerSysState &sysstate) :
         _params(params), _comm(comm), _sys_state(sysstate) {
     _wcsecs_per_instance = params.jobWallclockLimit();
     _cpusecs_per_instance = params.jobCpuLimit();
@@ -33,10 +33,10 @@ JobDatabase::JobDatabase(Parameters& params, MPI_Comm& comm, WorkerSysState& sys
     // Initialize balancer
     _balancer = std::unique_ptr<EventDrivenBalancer>(new EventDrivenBalancer(_comm, _params));
     // Initialize janitor (cleaning up old jobs)
-    _janitor.run([this]() {runJanitor();});
+    _janitor.run([this]() { runJanitor(); });
 }
 
-Job& JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescription::Application application) {
+Job &JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescription::Application application) {
 
     switch (application) {
         case JobDescription::Application::ONESHOT_SAT:
@@ -51,31 +51,32 @@ Job& JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescripti
             _jobs[jobId] = new DummyJob(_params, commSize, worldRank, jobId);
             break;
         case JobDescription::Application::TOHTN:
-            _jobs[jobId] = new TohtnJob(_params, commSize, worldRank, jobId);
+            _jobs[jobId] = new TohtnSimpleJob(_params, commSize, worldRank, jobId, JobDescription::ONESHOT_SAT);
             break;
     }
     _num_stored_jobs++;
     return *_jobs[jobId];
 }
 
-bool JobDatabase::appendRevision(int jobId, const std::shared_ptr<std::vector<uint8_t>>& description, int source) {
+bool JobDatabase::appendRevision(int jobId, const std::shared_ptr<std::vector<uint8_t>> &description, int source) {
 
     if (!has(jobId)) {
         LOG(V1_WARN, "[WARN] Unknown job #%i : discard desc. of size %i\n", jobId, description->size());
         return false;
     }
-    auto& job = get(jobId);
+    auto &job = get(jobId);
     int rev = JobDescription::readRevisionIndex(*description);
     if (job.hasDescription()) {
-        if (rev != job.getMaxConsecutiveRevision()+1) {
+        if (rev != job.getMaxConsecutiveRevision() + 1) {
             // Revision data would cause a "hole" in the list of job revision data
             LOG(V1_WARN, "[WARN] #%i rev. %i inconsistent w/ max. consecutive rev. %i : discard desc. of size %i\n",
                 jobId, rev, job.getMaxConsecutiveRevision(), description->size());
             return false;
         }
     } else if (rev != 0) {
-        LOG(V1_WARN, "[WARN] #%i invalid \"first\" rev. %i : discard desc. of size %i\n", jobId, rev, description->size());
-            return false;
+        LOG(V1_WARN, "[WARN] #%i invalid \"first\" rev. %i : discard desc. of size %i\n", jobId, rev,
+            description->size());
+        return false;
     }
 
     // Push revision description
@@ -89,7 +90,7 @@ void JobDatabase::execute(int jobId, int source) {
         LOG(V1_WARN, "[WARN] Unknown job #%i\n", jobId);
         return;
     }
-    auto& job = get(jobId);
+    auto &job = get(jobId);
 
     // Execute job
     setLoad(1, jobId);
@@ -109,7 +110,7 @@ void JobDatabase::execute(int jobId, int source) {
 
 void JobDatabase::preregisterJobInBalancer(int jobId) {
     assert(has(jobId));
-    auto& job = get(jobId);
+    auto &job = get(jobId);
     int demand = std::max(1, job.getJobTree().isRoot() ? 0 : job.getDemand());
     _balancer->onActivate(job, demand);
     if (job.getJobTree().isRoot()) job.setLastDemand(demand);
@@ -117,12 +118,12 @@ void JobDatabase::preregisterJobInBalancer(int jobId) {
 
 bool JobDatabase::checkComputationLimits(int jobId) {
 
-    auto& job = get(jobId);
+    auto &job = get(jobId);
     if (!job.getJobTree().isRoot()) return false;
     return job.checkResourceLimit(_wcsecs_per_instance, _cpusecs_per_instance);
 }
 
-bool JobDatabase::isRequestObsolete(const JobRequest& req) {
+bool JobDatabase::isRequestObsolete(const JobRequest &req) {
 
     // Requests for a job root never become obsolete
     if (req.requestedNodeIndex == 0) return false;
@@ -135,12 +136,12 @@ bool JobDatabase::isRequestObsolete(const JobRequest& req) {
 
     if (!has(req.jobId)) return false;
 
-    Job& job = get(req.jobId);
+    Job &job = get(req.jobId);
     if (job.getState() == ACTIVE) {
         // Does this node KNOW that the request is already completed?
         if (req.requestedNodeIndex == job.getIndex()
-        || (job.getJobTree().hasLeftChild() && req.requestedNodeIndex == job.getJobTree().getLeftChildIndex())
-        || (job.getJobTree().hasRightChild() && req.requestedNodeIndex == job.getJobTree().getRightChildIndex())) {
+            || (job.getJobTree().hasLeftChild() && req.requestedNodeIndex == job.getJobTree().getLeftChildIndex())
+            || (job.getJobTree().hasRightChild() && req.requestedNodeIndex == job.getJobTree().getRightChildIndex())) {
             // Request already completed!
             LOG(V4_VVER, "%s : already completed\n", req.toStr().c_str());
             return true;
@@ -149,7 +150,7 @@ bool JobDatabase::isRequestObsolete(const JobRequest& req) {
     return false;
 }
 
-bool JobDatabase::isAdoptionOfferObsolete(const JobRequest& req, bool alreadyAccepted) {
+bool JobDatabase::isAdoptionOfferObsolete(const JobRequest &req, bool alreadyAccepted) {
 
     // Requests for a job root never become obsolete
     if (req.requestedNodeIndex == 0) return false;
@@ -160,14 +161,14 @@ bool JobDatabase::isAdoptionOfferObsolete(const JobRequest& req, bool alreadyAcc
         return true;
     }
 
-    Job& job = get(req.jobId);
+    Job &job = get(req.jobId);
     if (job.getState() != ACTIVE && !hasCommitment(req.jobId)) {
         // Job is not active
         LOG(V4_VVER, "%s : job inactive (%s)\n", req.toStr().c_str(), job.jobStateToStr());
         return true;
     }
     if (req.requestedNodeIndex != job.getJobTree().getLeftChildIndex()
-            && req.requestedNodeIndex != job.getJobTree().getRightChildIndex()) {
+        && req.requestedNodeIndex != job.getJobTree().getRightChildIndex()) {
         // Requested node index is not a valid child index for this job
         LOG(V4_VVER, "%s : not a valid child index (any more)\n", job.toStr());
         return true;
@@ -194,9 +195,9 @@ bool JobDatabase::isAdoptionOfferObsolete(const JobRequest& req, bool alreadyAcc
     return false;
 }
 
-void JobDatabase::commit(JobRequest& req) {
+void JobDatabase::commit(JobRequest &req) {
     if (has(req.jobId)) {
-        Job& job = get(req.jobId);
+        Job &job = get(req.jobId);
         LOG(V3_VERB, "COMMIT %s -> #%i:%i\n", job.toStr(), req.jobId, req.requestedNodeIndex);
         job.commit(req);
         _has_commitment = true;
@@ -209,15 +210,17 @@ void JobDatabase::commit(JobRequest& req) {
     }
 }
 
-void JobDatabase::initScheduler(JobRequest& req, std::function<void(const JobRequest& req, int tag, bool left, int dest)> emitJobReq) {
+void JobDatabase::initScheduler(JobRequest &req,
+                                std::function<void(const JobRequest &req, int tag, bool left, int dest)> emitJobReq) {
 
-    auto& job = get(req.jobId);
+    auto &job = get(req.jobId);
     auto key = std::pair<int, int>(req.jobId, req.requestedNodeIndex);
     if (!_schedulers.count(key)) {
         _schedulers.emplace(key,
-            job.constructScheduler([this, emitJobReq](const JobRequest& req, int tag, bool left, int dest) {
-                emitJobReq(req, tag, left, dest);
-            })
+                            job.constructScheduler(
+                                    [this, emitJobReq](const JobRequest &req, int tag, bool left, int dest) {
+                                        emitJobReq(req, tag, left, dest);
+                                    })
         );
         _num_schedulers_per_job[req.jobId]++;
     }
@@ -239,10 +242,10 @@ void JobDatabase::initScheduler(JobRequest& req, std::function<void(const JobReq
     }
 }
 
-void JobDatabase::suspendScheduler(Job& job) {
+void JobDatabase::suspendScheduler(Job &job) {
     auto key = std::pair<int, int>(job.getId(), job.getIndex());
     if (_schedulers.count(key)) {
-        auto& sched = _schedulers.at(key);
+        auto &sched = _schedulers.at(key);
         if (sched.isActive()) sched.beginSuspension();
         if (job.getIndex() > 0 && sched.canCommit()) {
             _schedulers.erase(key);
@@ -259,7 +262,7 @@ bool JobDatabase::hasCommitment(int jobId) const {
     return has(jobId) && get(jobId).hasCommitment();
 }
 
-const JobRequest& JobDatabase::getCommitment(int jobId) {
+const JobRequest &JobDatabase::getCommitment(int jobId) {
     return get(jobId).getCommitment();
 }
 
@@ -272,7 +275,8 @@ void JobDatabase::uncommit(int jobId) {
     }
 }
 
-JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequestMode mode, int sender, int& removedJob) {
+JobDatabase::AdoptionResult
+JobDatabase::tryAdopt(const JobRequest &req, JobRequestMode mode, int sender, int &removedJob) {
 
     // Decide whether job should be adopted or bounced to another node
     removedJob = -1;
@@ -285,15 +289,16 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
 
     // Does this node have a dormant root which is NOT this job?
     if (hasDormantRoot() && (
-        !has(req.jobId)
-        || !get(req.jobId).getJobTree().isRoot()
-        || get(req.jobId).getState() != SUSPENDED
+            !has(req.jobId)
+            || !get(req.jobId).getJobTree().isRoot()
+            || get(req.jobId).getState() != SUSPENDED
     )) {
         LOG(V4_VVER, "Reject %s : dormant root present\n", req.toStr().c_str());
         return REJECT;
     }
 
-    if (hasScheduler(req.jobId, req.requestedNodeIndex) && !getScheduler(req.jobId, req.requestedNodeIndex).canCommit()) {
+    if (hasScheduler(req.jobId, req.requestedNodeIndex) &&
+        !getScheduler(req.jobId, req.requestedNodeIndex).canCommit()) {
         LOG(V1_WARN, "%s : still have an active scheduler of this node!\n", req.toStr().c_str());
         return REJECT;
     }
@@ -317,7 +322,7 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
     // Is node idle and not committed to another job?
     if (!isBusyOrCommitted()) {
         if (mode != TARGETED_REJOIN) return ADOPT_FROM_IDLE;
-        // Oneshot request: Job must be present and suspended
+            // Oneshot request: Job must be present and suspended
         else if (hasDormantJob(req.jobId)) {
             return ADOPT_FROM_IDLE;
         } else {
@@ -335,13 +340,13 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
         if (!has(req.jobId) || get(req.jobId).getState() != ACTIVE) {
 
             // Current job must be a non-root leaf node
-            Job& job = getActive();
+            Job &job = getActive();
             if (job.getState() == ACTIVE && !job.getJobTree().isRoot() && job.getJobTree().isLeaf()) {
 
                 // Inform parent node of the original job  
                 LOG(V4_VVER, "Suspend %s ...\n", job.toStr());
                 LOG(V4_VVER, "... to adopt starving %s\n",
-                                toStr(req.jobId, req.requestedNodeIndex).c_str());
+                    toStr(req.jobId, req.requestedNodeIndex).c_str());
 
                 removedJob = job.getId();
                 suspend(removedJob);
@@ -361,10 +366,10 @@ JobDatabase::AdoptionResult JobDatabase::tryAdopt(const JobRequest& req, JobRequ
     return REJECT;
 }
 
-void JobDatabase::reactivate(const JobRequest& req, int source) {
+void JobDatabase::reactivate(const JobRequest &req, int source) {
     // Already has job description: Directly resume job (if not terminated yet)
     assert(has(req.jobId));
-    Job& job = get(req.jobId);
+    Job &job = get(req.jobId);
     job.updateJobTree(req.requestedNodeIndex, req.rootRank, req.requestingNodeRank);
     setLoad(1, req.jobId);
     assert(!hasCommitment(req.jobId));
@@ -379,7 +384,7 @@ void JobDatabase::reactivate(const JobRequest& req, int source) {
 
 void JobDatabase::suspend(int jobId) {
     assert(has(jobId) && get(jobId).getState() == ACTIVE);
-    Job& job = get(jobId);
+    Job &job = get(jobId);
     // Suspend (and possibly erase) job scheduler
     suspendScheduler(job);
     job.suspend();
@@ -390,7 +395,7 @@ void JobDatabase::suspend(int jobId) {
 
 void JobDatabase::terminate(int jobId) {
     assert(has(jobId));
-    Job& job = get(jobId);
+    Job &job = get(jobId);
     bool wasTerminatedBefore = job.getState() == JobState::PAST;
     if (hasActiveJob() && getActive().getId() == jobId) {
         setLoad(0, jobId);
@@ -401,17 +406,17 @@ void JobDatabase::terminate(int jobId) {
         auto numDesires = job.getJobTree().getNumDesires();
         auto numFulfilledDesires = job.getJobTree().getNumFulfiledDesires();
         auto sumDesireLatencies = job.getJobTree().getSumOfDesireLatencies();
-        float desireFulfilmentRatio = numDesires == 0 ? 0 : (float)numFulfilledDesires / numDesires;
+        float desireFulfilmentRatio = numDesires == 0 ? 0 : (float) numFulfilledDesires / numDesires;
         float meanFulfilmentLatency = numFulfilledDesires == 0 ? 0 : sumDesireLatencies / numFulfilledDesires;
 
-        auto& latencies = job.getJobTree().getDesireLatencies();
+        auto &latencies = job.getJobTree().getDesireLatencies();
         float meanLatency = 0, minLatency = 0, maxLatency = 0, medianLatency = 0;
         if (!latencies.empty()) {
             std::sort(latencies.begin(), latencies.end());
             meanLatency = std::accumulate(latencies.begin(), latencies.end(), 0.0f) / latencies.size();
             minLatency = latencies.front();
             maxLatency = latencies.back();
-            medianLatency = latencies[latencies.size()/2];
+            medianLatency = latencies[latencies.size() / 2];
         }
 
         LOG(V3_VERB, "%s desires fulfilled=%.4f latency={num:%i min:%.5f med:%.5f avg:%.5f max:%.5f}\n",
@@ -435,12 +440,12 @@ void JobDatabase::forgetOldJobs() {
     // Scan inactive schedulers
     auto it = _schedulers.begin();
     while (it != _schedulers.end()) {
-        auto& [id, idx] = it->first;
+        auto&[id, idx] = it->first;
         if (has(id) && (get(id).getState() == ACTIVE || get(id).hasCommitment())) {
             ++it;
             continue;
         }
-        LocalScheduler& scheduler = it->second;
+        LocalScheduler &scheduler = it->second;
         // Condition for a scheduler to be deleted:
         // Either job is not present (any more) or non-root
         if ((!has(id) || idx > 0) && scheduler.canCommit()) {
@@ -450,8 +455,8 @@ void JobDatabase::forgetOldJobs() {
     }
 
     // Find "forgotten" jobs in destruction queue which can now be destructed
-    for (auto it = _job_destruct_queue.begin(); it != _job_destruct_queue.end(); ) {
-        Job* job = *it;
+    for (auto it = _job_destruct_queue.begin(); it != _job_destruct_queue.end();) {
+        Job *job = *it;
         if (job->isDestructible()) {
             LOG(V4_VVER, "%s : order deletion\n", job->toStr());
             // Move pointer to "free" queue emptied by janitor thread
@@ -470,8 +475,8 @@ void JobDatabase::forgetOldJobs() {
 
     // Scan jobs for being forgettable
     std::priority_queue<std::pair<int, float>, std::vector<std::pair<int, float>>, SuspendedJobComparator> suspendedQueue;
-    for (auto [id, jobPtr] : _jobs) {
-        Job& job = *jobPtr;
+    for (auto[id, jobPtr]: _jobs) {
+        Job &job = *jobPtr;
         if (job.hasDescription()) numJobsWithDescription++;
         if (job.hasCommitment()) continue;
         // Old inactive job
@@ -490,7 +495,7 @@ void JobDatabase::forgetOldJobs() {
     }
 
     // Mark jobs as forgettable as long as job cache is exceeded
-    while ((int)suspendedQueue.size() > jobCacheSize) {
+    while ((int) suspendedQueue.size() > jobCacheSize) {
         jobsToForget.push_back(suspendedQueue.top().first);
         suspendedQueue.pop();
     }
@@ -499,13 +504,13 @@ void JobDatabase::forgetOldJobs() {
         LOG(V4_VVER, "contexts=%i descriptions=%i\n", _jobs.size(), numJobsWithDescription);
 
     // Perform forgetting of jobs
-    for (int jobId : jobsToForget) forget(jobId);
+    for (int jobId: jobsToForget) forget(jobId);
 }
 
 void JobDatabase::forget(int jobId) {
-    Job* jobPtr;
+    Job *jobPtr;
     {
-        Job& job = get(jobId);
+        Job &job = get(jobId);
         LOG(V4_VVER, "FORGET %s\n", job.toStr());
         if (job.getState() != PAST) job.terminate();
         assert(job.getState() == PAST);
@@ -518,10 +523,10 @@ void JobDatabase::forget(int jobId) {
     _jobs.erase(jobId);
 }
 
-std::vector<std::pair<JobRequest, int>>  JobDatabase::getDeferredRequestsToForward(float time) {
+std::vector<std::pair<JobRequest, int>> JobDatabase::getDeferredRequestsToForward(float time) {
 
     std::vector<std::pair<JobRequest, int>> result;
-    for (auto& [deferredTime, senderRank, req] : _deferred_requests) {
+    for (auto&[deferredTime, senderRank, req]: _deferred_requests) {
         if (time - deferredTime < 1.0f) break;
         result.emplace_back(std::move(req), senderRank);
         LOG(V3_VERB, "Reactivate deferred %s\n", req.toStr().c_str());
@@ -538,12 +543,12 @@ bool JobDatabase::has(int id) const {
     return _jobs.count(id) > 0;
 }
 
-Job& JobDatabase::get(int id) const {
+Job &JobDatabase::get(int id) const {
     assert(_jobs.count(id));
     return *_jobs.at(id);
 }
 
-Job& JobDatabase::getActive() {
+Job &JobDatabase::getActive() {
     return *_current_job;
 }
 
@@ -584,7 +589,7 @@ bool JobDatabase::isBusyOrCommitted() const {
 }
 
 bool JobDatabase::hasDormantRoot() const {
-    for (auto& [_, job] : _jobs) {
+    for (auto&[_, job]: _jobs) {
         if (job->getJobTree().isRoot() && job->getState() == SUSPENDED)
             return true;
     }
@@ -597,7 +602,7 @@ bool JobDatabase::hasDormantJob(int jobId) const {
 
 std::vector<int> JobDatabase::getDormantJobs() const {
     std::vector<int> out;
-    for (auto& [jobId, _] : _jobs) {
+    for (auto&[jobId, _]: _jobs) {
         if (hasDormantJob(jobId)) out.push_back(jobId);
     }
     return out;
@@ -605,7 +610,7 @@ std::vector<int> JobDatabase::getDormantJobs() const {
 
 bool JobDatabase::hasInactiveJobsWaitingForReactivation() const {
     if (!_params.reactivationScheduling()) return false;
-    for (auto& [_, job] : _jobs) {
+    for (auto&[_, job]: _jobs) {
         if (job->getState() == SUSPENDED && job->getJobTree().isWaitingForReactivation())
             return true;
     }
@@ -623,13 +628,13 @@ JobRequest JobDatabase::loadPendingRootReactivationRequest() {
     return r;
 }
 
-void JobDatabase::setPendingRootReactivationRequest(JobRequest&& req) {
+void JobDatabase::setPendingRootReactivationRequest(JobRequest &&req) {
     assert(!hasPendingRootReactivationRequest()
-        || req.jobId == _pending_root_reactivate_request.value().jobId);
+           || req.jobId == _pending_root_reactivate_request.value().jobId);
     _pending_root_reactivate_request = std::move(req);
 }
 
-void JobDatabase::addFutureRequestMessage(int epoch, MessageHandle&& h) {
+void JobDatabase::addFutureRequestMessage(int epoch, MessageHandle &&h) {
     _future_request_msgs[epoch].push_back(std::move(h));
 }
 
@@ -638,7 +643,7 @@ std::list<MessageHandle> JobDatabase::getArrivedFutureRequests() {
     std::list<MessageHandle> out;
     auto it = _future_request_msgs.begin();
     while (it != _future_request_msgs.end()) {
-        auto& [epoch, msgs] = *it;
+        auto&[epoch, msgs] = *it;
         if (epoch <= presentEpoch) {
             // found a candidate message
             assert(!msgs.empty());
@@ -651,7 +656,7 @@ std::list<MessageHandle> JobDatabase::getArrivedFutureRequests() {
     return out;
 }
 
-void JobDatabase::addRootRequest(const JobRequest& req) {
+void JobDatabase::addRootRequest(const JobRequest &req) {
     _root_requests[req.jobId].push_back(req);
     _balancer->onProbe(req.jobId);
 }
@@ -661,7 +666,7 @@ std::optional<JobRequest> JobDatabase::getRootRequest(int jobId) {
     auto it = _root_requests.find(jobId);
     if (it == _root_requests.end()) return std::optional<JobRequest>();
 
-    auto& list = it->second;
+    auto &list = it->second;
     std::optional<JobRequest> optReq = std::optional<JobRequest>(list.front());
     list.pop_front();
     if (list.empty()) _root_requests.erase(jobId);
@@ -675,7 +680,7 @@ void JobDatabase::runJanitor() {
 
     while (_janitor.continueRunning() || _num_stored_jobs > 0) {
 
-        std::list<Job*> copy;
+        std::list<Job *> copy;
         {
             // Try to fetch the current jobs to free
             auto lock = _janitor_mutex.getLock();
@@ -686,14 +691,14 @@ void JobDatabase::runJanitor() {
                 break;
 
             // Copy jobs to free to local list
-            for (Job* job : _jobs_to_free) copy.push_back(job);
+            for (Job *job: _jobs_to_free) copy.push_back(job);
             _jobs_to_free.clear();
         }
 
         LOGGER(lg, V5_DEBG, "Found %i job(s) to delete\n", copy.size());
 
         // Free each job
-        for (Job* job : copy) {
+        for (Job *job: copy) {
             int id = job->getId();
             LOGGER(lg, V4_VVER, "DELETE #%i\n", id);
             delete job;
@@ -713,14 +718,14 @@ JobDatabase::~JobDatabase() {
     // Setup a watchdog to get feedback on hanging destructors
     Watchdog watchdog(/*enabled=*/_params.watchdog(), /*checkIntervMillis=*/200, Timer::elapsedSeconds());
     watchdog.setWarningPeriod(500);
-    watchdog.setAbortPeriod(10*1000);
+    watchdog.setAbortPeriod(10 * 1000);
 
     // Collect all jobs from central job table
     std::vector<int> jobIds;
-    for (auto idJobPair : _jobs) jobIds.push_back(idJobPair.first);
+    for (auto idJobPair: _jobs) jobIds.push_back(idJobPair.first);
 
     // Forget each job, move raw pointer to destruct queue
-    for (int jobId : jobIds) {
+    for (int jobId: jobIds) {
         forget(jobId);
         watchdog.reset();
     }
@@ -730,7 +735,7 @@ JobDatabase::~JobDatabase() {
         forgetOldJobs();
         _janitor_cond_var.notify();
         watchdog.reset();
-        usleep(10*1000); // 10 milliseconds
+        usleep(10 * 1000); // 10 milliseconds
     }
 
     _janitor.stopWithoutWaiting();

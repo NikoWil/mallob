@@ -435,6 +435,14 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     JobDescription& desc = *_active_jobs.at(jobId);
     desc.getStatistics().processingTime = Timer::elapsedSeconds() - desc.getStatistics().timeOfScheduling;
 
+    // TODO: create separate logic to write out plans to JSON for automatic verification and stuff
+    if (desc.getApplication() == JobDescription::Application::TOHTN) {
+        LOG(V2_INFO, "Received JobResult");
+        // TODO: Is this legal? Probably, because char. But like anyone knows how to determine reinterpret_cast legality
+        std::string plan_str{reinterpret_cast<char*>(jobResult.serialize().data())};
+        LOG(V2_INFO, "%s\n", plan_str.c_str());
+    }
+
     // Output response time and solution header
     LOG(V2_INFO, "RESPONSE_TIME #%i %.6f rev. %i\n", jobId, Timer::elapsedSeconds()-desc.getArrival(), revision);
     LOG(V2_INFO, "SOLUTION #%i %s rev. %i\n", jobId, resultCode == RESULT_SAT ? "SAT" : "UNSAT", revision);

@@ -5,8 +5,12 @@
 #include <fstream>
 #include "tohtn_simple_job.hpp"
 
+#include "util/logger.hpp"
+
 #include "tohtn_utils.hpp"
-#include "app/tohtn/lilotane/util/log.h"
+
+TohtnSimpleJob::TohtnSimpleJob(const Parameters &params, int commSize, int worldRank, int jobId,
+                               JobDescription::Application appl) : Job(params, commSize, worldRank, jobId, appl) {}
 
 void TohtnSimpleJob::appl_start() {
     {
@@ -155,7 +159,7 @@ JobResult &&TohtnSimpleJob::appl_getResult() {
         _result = JobResult{std::move(plan_bytes)};
     } else {
         // TODO: what if we are called while no plan exists? Crash the world?
-        Log::e("Worker %d asked for plan while none exists!\n", getId());
+        LOG(V1_WARN, "Worker %d asked for plan while none exists!\n", getId());
     }
 
     return std::move(_result);

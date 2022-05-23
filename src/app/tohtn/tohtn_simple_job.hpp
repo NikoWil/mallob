@@ -12,6 +12,8 @@
 
 class TohtnSimpleJob : public Job {
 public:
+    TohtnSimpleJob(const Parameters &params, int commSize, int worldRank, int jobId, JobDescription::Application appl);
+
     void appl_start() override;
 
     void appl_suspend() override;
@@ -22,13 +24,13 @@ public:
 
     int appl_solved() override;
 
-    JobResult&& appl_getResult() override;
+    JobResult &&appl_getResult() override;
 
     bool appl_wantsToBeginCommunication() override;
 
     void appl_beginCommunication() override;
 
-    void appl_communicate(int source, JobMessage& msg) override;
+    void appl_communicate(int source, JobMessage &msg) override;
 
     void appl_dumpStats() override;
 
