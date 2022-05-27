@@ -1,4 +1,11 @@
 //
+// Created by khondar on 23.05.22.
+//
+
+#ifndef CROWDHTN_CROWD_WORKER_HPP
+#define CROWDHTN_CROWD_WORKER_HPP
+
+//
 // Created by khondar on 17.05.22.
 //
 
@@ -6,14 +13,11 @@
 #include <optional>
 #include <vector>
 
-#ifndef MALLOB_CROWD_WORKER_HPP
-#define MALLOB_CROWD_WORKER_HPP
-
 class HtnInstance;
 
 // TODO: params?
 std::shared_ptr<HtnInstance>
-get_htn_instance(const std::string &domain_file_name, const std::string &problem_file_name);
+get_htn_instance(std::string &domain_file_name, std::string &problem_file_name);
 
 enum class WorkerPlanState {
     PLANNING,
@@ -32,4 +36,4 @@ public:
 
 std::unique_ptr<SingleThreadedCrowdWorker> create_crowd_worker(std::shared_ptr<HtnInstance> htn);
 
-#endif //MALLOB_CROWD_WORKER_HPP
+#endif //CROWDHTN_CROWD_WORKER_HPP
