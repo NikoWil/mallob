@@ -48,7 +48,6 @@ void TohtnSimpleJob::appl_start() {
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
     _worker = create_crowd_worker(_htn);
 
-    // TODO: create thread
     _work_thread = std::thread{[this]() {
         while (true) {
             // The three sections are in different blocks to make it clear to the compiler that mutexes can be released
@@ -131,9 +130,12 @@ int TohtnSimpleJob::appl_solved() {
 }
 
 JobResult &&TohtnSimpleJob::appl_getResult() {
-    // TODO
-    std::unique_lock worker_lock{_worker_mutex};
-    auto plan_opt{_worker->get_plan_string()};
+    std::optional<std::string> plan_opt;
+    {
+        std::unique_lock worker_lock{_worker_mutex};
+        plan_opt = _worker->get_plan_string();
+    }
+
     if (plan_opt.has_value()) {
         // Round up the number of chars in the string to a multiple of sizeof(int)
         // This is done to avoid confusion by the JobResult class which might copy between the uint8_t and the int
@@ -162,6 +164,7 @@ JobResult &&TohtnSimpleJob::appl_getResult() {
         LOG(V1_WARN, "Worker %d asked for plan while none exists!\n", getId());
     }
 
+    // Don't tell me, the signature asks for it
     return std::move(_result);
 }
 

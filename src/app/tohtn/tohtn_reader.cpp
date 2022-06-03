@@ -14,6 +14,7 @@ std::size_t read_file(const std::string &file_name, JobDescription &desc) {
 
     std::size_t num_chars{0};
     for (std::string line; std::getline(input, line);) {
+        LOG(V2_INFO, "%s\n", line.c_str());
         for (const char c: line) {
             desc.addLiteral(c);
             ++num_chars;

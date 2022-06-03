@@ -3,8 +3,11 @@
 
 #include "app/dummy/dummy_reader.hpp"
 #include "app/tohtn/tohtn_reader.hpp"
+#include "util/logger.hpp"
 
 bool JobReader::read(const std::vector<std::string>& files, SatReader::ContentMode contentMode, JobDescription& desc) {
+    Logger::getMainInstance().log(V0_CRIT, "Entered JobReader::read\n");
+
     switch (desc.getApplication()) {
     case JobDescription::DUMMY:
         return DummyReader::read(files, desc);
