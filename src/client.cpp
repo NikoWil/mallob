@@ -438,8 +438,15 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     // TODO: create separate logic to write out plans to JSON for automatic verification and stuff
     if (desc.getApplication() == JobDescription::Application::TOHTN) {
         LOG(V2_INFO, "Received JobResult");
-        // TODO: Is this legal? Probably, because char. But like anyone knows how to determine reinterpret_cast legality
-        std::string plan_str{reinterpret_cast<char*>(jobResult.serialize().data())};
+        std::vector<int> plan_as_ints{jobResult.extractSolution()};
+        std::string plan_str;
+        plan_str.reserve(plan_as_ints.size());
+        for (const auto i : plan_as_ints) {
+            plan_str.push_back(static_cast<char>(i));
+        }
+
+        // the plan was received by moving out of the jobResult. Move the data back in to not invalidate later logic
+        jobResult.setSolution(std::move(plan_as_ints));
         LOG(V2_INFO, "%s\n", plan_str.c_str());
     }
 

@@ -24,7 +24,5 @@ std::pair<std::string, std::string> extract_files(const JobDescription &descript
         problem.push_back(static_cast<char>(problem_payload[i]));
     }
 
-    LOG(V2_INFO, "problem init:\n%s\n", problem.c_str());
-
     return {domain, problem};
 }

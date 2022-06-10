@@ -44,9 +44,11 @@ void TohtnSimpleJob::appl_start() {
     problem_file << problem;
     problem_file.close();
 
-
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
+    LOG(V2_INFO, "HtnInstance created\n");
+
     _worker = create_crowd_worker(_htn);
+    LOG(V2_INFO, "Worker created\n");
 
     _work_thread = std::thread{[this]() {
         while (true) {
@@ -86,6 +88,7 @@ void TohtnSimpleJob::appl_start() {
             }
         }
     }};
+    LOG(V2_INFO, "Work Thread started\n");
 }
 
 void TohtnSimpleJob::appl_suspend() {
@@ -126,40 +129,45 @@ void TohtnSimpleJob::appl_terminate() {
 
 int TohtnSimpleJob::appl_solved() {
     std::unique_lock worker_lock{_worker_mutex};
-    return _worker->has_plan();
+    if (_worker) {
+        LOG(V2_INFO, "Worker %d asked whether plan exists, reports _worker->has_plan = %d\n", this->getId(), static_cast<int>(_worker->has_plan()));
+        return _worker->has_plan();
+    } else {
+        LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n");
+        return false;
+    }
 }
 
 JobResult &&TohtnSimpleJob::appl_getResult() {
+    LOG(V2_INFO, "TohtnSimpleJob::appl_getResult()\n");
     std::optional<std::string> plan_opt;
     {
         std::unique_lock worker_lock{_worker_mutex};
-        plan_opt = _worker->get_plan_string();
+        if (_worker) {
+            LOG(V2_INFO, "_worker->get_plan_string()\n");
+            plan_opt = _worker->get_plan_string();
+            LOG(V2_INFO, "worker got plan string\n");
+        }
     }
 
+    _result = JobResult{};
+    _result.id = this->getId();
+    _result.revision = this->getRevision();
     if (plan_opt.has_value()) {
-        // Round up the number of chars in the string to a multiple of sizeof(int)
-        // This is done to avoid confusion by the JobResult class which might copy between the uint8_t and the int
-        // representation at will
-        const auto round_up = [](size_t val, size_t base) {
-            if (val % base == 0) {
-                return val;
-            } else {
-                return val + base - (val % base);
-            }
-        };
+        _result.result = 10;
 
-        std::string plan_string{std::move(plan_opt.value())};
-        // make space for the null terminator
-        const size_t nulled_string_size{plan_string.size() + 1};
-        const size_t rounded_string_size{round_up(nulled_string_size, sizeof(int))};
-
-        std::vector<uint8_t> plan_bytes(rounded_string_size);
-        memcpy(plan_bytes.data(), plan_string.data(), plan_string.length());
-        // Set null terminator just behing the plan string encoding
-        // We do not care about the values of any bytes beyond that, they are just there to avoid invalid accesses
-        plan_bytes.at(plan_string.length()) = '\0';
-        _result = JobResult{std::move(plan_bytes)};
+        const std::string plan_string{std::move(plan_opt.value())};
+        std::vector<int> plan_str_as_ints;
+        plan_str_as_ints.reserve(plan_string.size());
+        for (const auto c : plan_string) {
+            plan_str_as_ints.push_back(c);
+        }
+        _result.setSolution(std::move(plan_str_as_ints));
+        LOG(V2_INFO, "plan_str:\n%s\n", plan_string.c_str());
     } else {
+        _result.result = 20;
+        _result.setSolution({});
+
         // TODO: what if we are called while no plan exists? Crash the world?
         LOG(V1_WARN, "Worker %d asked for plan while none exists!\n", getId());
     }
@@ -190,7 +198,7 @@ void TohtnSimpleJob::appl_dumpStats() {
 }
 
 int TohtnSimpleJob::getDemand() const {
-    // TODO: is this correct?
+    // TODO: is this correct? Yup.
     return 1;
 }
 
