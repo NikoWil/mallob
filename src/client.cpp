@@ -436,7 +436,7 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     desc.getStatistics().processingTime = Timer::elapsedSeconds() - desc.getStatistics().timeOfScheduling;
 
     // TODO: create separate logic to write out plans to JSON for automatic verification and stuff
-    if (desc.getApplication() == JobDescription::Application::TOHTN) {
+    /*if (desc.getApplication() == JobDescription::Application::TOHTN) {
         LOG(V2_INFO, "Received JobResult");
         std::vector<int> plan_as_ints{jobResult.extractSolution()};
         std::string plan_str;
@@ -448,7 +448,7 @@ void Client::handleSendJobResult(MessageHandle& handle) {
         // the plan was received by moving out of the jobResult. Move the data back in to not invalidate later logic
         jobResult.setSolution(std::move(plan_as_ints));
         LOG(V2_INFO, "%s\n", plan_str.c_str());
-    }
+    }*/
 
     // Output response time and solution header
     LOG(V2_INFO, "RESPONSE_TIME #%i %.6f rev. %i\n", jobId, Timer::elapsedSeconds()-desc.getArrival(), revision);

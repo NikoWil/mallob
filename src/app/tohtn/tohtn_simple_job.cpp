@@ -163,7 +163,16 @@ JobResult &&TohtnSimpleJob::appl_getResult() {
             plan_str_as_ints.push_back(c);
         }
         _result.setSolution(std::move(plan_str_as_ints));
+
+        std::string new_plan_str;
+        std::vector<int> res_as_ints{_result.extractSolution()};
+        for (const auto i : res_as_ints) {
+            new_plan_str.push_back(static_cast<char>(i));
+        }
+        _result.setSolution(std::move(res_as_ints));
+
         LOG(V2_INFO, "plan_str:\n%s\n", plan_string.c_str());
+        LOG(V2_INFO, "plan_str after encoding and decoding again:\n%s\n", new_plan_str.c_str());
     } else {
         _result.result = 20;
         _result.setSolution({});
