@@ -6,6 +6,7 @@
 #include "util/logger.hpp"
 
 bool JobReader::read(const std::vector<std::string>& files, SatReader::ContentMode contentMode, JobDescription& desc) {
+    LOG(V2_INFO, "JobReader::read\n");
     switch (desc.getApplication()) {
     case JobDescription::DUMMY:
         return DummyReader::read(files, desc);

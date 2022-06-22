@@ -29,7 +29,7 @@ struct WorkerMessage {
     int tag;
     int source;
     int dest;
-    std::vector<uint8_t> data;
+    std::vector<int> data;
 };
 
 class SingleThreadedCrowdWorker {
@@ -53,14 +53,14 @@ public:
      * - positive work response acknowledgements
      * @param message
      */
-    virtual void add_message(WorkerMessage& message) = 0;
+    virtual void add_message(WorkerMessage &message) = 0;
 
     /**
      * Get any messages that the CooperativeCrowdWorker wants to send
      * @param worker_ids The worker ids to which a message may be sent
      * @return
      */
-    [[nodiscard]] virtual std::vector<WorkerMessage> get_messages(const std::vector<int>& worker_ids) = 0;
+    [[nodiscard]] virtual std::vector<WorkerMessage> get_messages(const std::vector<int> &worker_ids) = 0;
 
     /**
      * Tells a CooperativeCrowdWorker to stop any work. This will mean that
@@ -82,5 +82,8 @@ public:
 };
 
 std::unique_ptr<SingleThreadedCrowdWorker> create_crowd_worker(std::shared_ptr<HtnInstance> htn);
+
+std::unique_ptr<CooperativeCrowdWorker>
+create_cooperative_worker(std::shared_ptr<HtnInstance> htn, int id, bool is_root);
 
 #endif //CROWDHTN_CROWD_WORKER_HPP

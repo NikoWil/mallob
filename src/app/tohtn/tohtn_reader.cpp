@@ -28,7 +28,10 @@ std::size_t read_file(const std::string &file_name, JobDescription &desc) {
 bool TohtnReader::read(const std::vector<std::string> &files, JobDescription &desc) {
     if (files.size() != 2) {
         LOG(V0_CRIT, "Invalid number of input files for TOHTN planning. Needs exactly 2 inputs <domain> <problem>\n");
+        return false;
     }
+
+    LOG(V2_INFO, "TohtnReader::read, domain file: %s, problem file: %s\n", files[0].data(), files[1].data());
 
     desc.beginInitialization(desc.getRevision());
 

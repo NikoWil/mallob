@@ -130,7 +130,8 @@ void TohtnSimpleJob::appl_terminate() {
 int TohtnSimpleJob::appl_solved() {
     std::unique_lock worker_lock{_worker_mutex};
     if (_worker) {
-        LOG(V2_INFO, "Worker %d asked whether plan exists, reports _worker->has_plan = %d\n", this->getId(), static_cast<int>(_worker->has_plan()));
+        LOG(V2_INFO, "Worker %d asked whether plan exists, reports _worker->has_plan = %d\n", this->getId(),
+            static_cast<int>(_worker->has_plan()));
         return _worker->has_plan();
     } else {
         LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n");
@@ -154,28 +155,24 @@ JobResult &&TohtnSimpleJob::appl_getResult() {
     _result.id = this->getId();
     _result.revision = this->getRevision();
     if (plan_opt.has_value()) {
+        LOG(V2_INFO, "result exists!\n");
         _result.result = 10;
 
         const std::string plan_string{std::move(plan_opt.value())};
         std::vector<int> plan_str_as_ints;
         plan_str_as_ints.reserve(plan_string.size());
-        for (const auto c : plan_string) {
+        for (const auto c: plan_string) {
             plan_str_as_ints.push_back(c);
         }
+        _result.setSolutionToSerialize(plan_str_as_ints.data(), plan_str_as_ints.size());
         _result.setSolution(std::move(plan_str_as_ints));
 
-        std::string new_plan_str;
-        std::vector<int> res_as_ints{_result.extractSolution()};
-        for (const auto i : res_as_ints) {
-            new_plan_str.push_back(static_cast<char>(i));
-        }
-        _result.setSolution(std::move(res_as_ints));
-
         LOG(V2_INFO, "plan_str:\n%s\n", plan_string.c_str());
-        LOG(V2_INFO, "plan_str after encoding and decoding again:\n%s\n", new_plan_str.c_str());
     } else {
         _result.result = 20;
-        _result.setSolution({});
+        std::vector<int> empty_solution{};
+        _result.setSolutionToSerialize(empty_solution.data(), empty_solution.size());
+        _result.setSolution(std::move(empty_solution));
 
         // TODO: what if we are called while no plan exists? Crash the world?
         LOG(V1_WARN, "Worker %d asked for plan while none exists!\n", getId());
