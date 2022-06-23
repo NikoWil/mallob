@@ -18,6 +18,7 @@
 #include "util/sys/proc.hpp"
 #include "util/data_statistics.hpp"
 #include "app/tohtn/tohtn_simple_job.hpp"
+#include "app/tohtn/tohtn_multi_job.hpp"
 
 JobDatabase::JobDatabase(Parameters &params, MPI_Comm &comm, WorkerSysState &sysstate) :
         _params(params), _comm(comm), _sys_state(sysstate) {
@@ -51,7 +52,7 @@ Job &JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescripti
             _jobs[jobId] = new DummyJob(_params, commSize, worldRank, jobId);
             break;
         case JobDescription::Application::TOHTN:
-            _jobs[jobId] = new TohtnSimpleJob(_params, commSize, worldRank, jobId, JobDescription::ONESHOT_SAT);
+            _jobs[jobId] = new TohtnMultiJob(_params, commSize, worldRank, jobId, JobDescription::ONESHOT_SAT);
             break;
     }
     _num_stored_jobs++;

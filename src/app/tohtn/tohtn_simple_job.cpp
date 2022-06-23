@@ -124,18 +124,19 @@ void TohtnSimpleJob::appl_terminate() {
         std::unique_lock terminate_lock{_terminate_mutex};
         _termiante_flag = true;
     }
+    // only a resumed job will actually see the _terminate_flag and act accordingly
     appl_resume();
 }
 
 int TohtnSimpleJob::appl_solved() {
     std::unique_lock worker_lock{_worker_mutex};
     if (_worker) {
-        LOG(V2_INFO, "Worker %d asked whether plan exists, reports _worker->has_plan = %d\n", this->getId(),
-            static_cast<int>(_worker->has_plan()));
-        return _worker->has_plan();
+        LOG(V2_INFO, "Worker %d asked whether plan exists, reports _worker->has_plan = %s\n", this->getId(),
+            _worker->has_plan() ? "true" : "false");
+        return _worker->has_plan() ? 1 : -1;
     } else {
-        LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n");
-        return false;
+        LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n", this->getId());
+        return -1;
     }
 }
 
@@ -169,13 +170,13 @@ JobResult &&TohtnSimpleJob::appl_getResult() {
 
         LOG(V2_INFO, "plan_str:\n%s\n", plan_string.c_str());
     } else {
-        _result.result = 20;
+        _result.result = 0;
         std::vector<int> empty_solution{};
         _result.setSolutionToSerialize(empty_solution.data(), empty_solution.size());
         _result.setSolution(std::move(empty_solution));
 
         // TODO: what if we are called while no plan exists? Crash the world?
-        LOG(V1_WARN, "Worker %d asked for plan while none exists!\n", getId());
+        LOG(V1_WARN, "Worker %d asked for plan while none exists (yet)!\n", getId());
     }
 
     // Don't tell me, the signature asks for it
@@ -215,6 +216,6 @@ bool TohtnSimpleJob::appl_isDestructible() {
     return _work_thread.joinable() && _has_terminated;
 }
 
-TohtnSimpleJob::~TohtnSimpleJob() noexcept {
+TohtnSimpleJob::~TohtnSimpleJob() {
     _work_thread.join();
 }

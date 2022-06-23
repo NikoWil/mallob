@@ -7,10 +7,12 @@
 
 
 #include "app/job.hpp"
-#include "crowd_worker.hpp"
+#include "crowd/crowd_worker.hpp"
 
 class TohtnMultiJob : public Job {
 public:
+    TohtnMultiJob(const Parameters &params, int commSize, int worldRank, int jobId, JobDescription::Application appl);
+
     void appl_start() override;
 
     void appl_suspend() override;
@@ -64,6 +66,8 @@ private:
 
     // Only exists as appl_getResult returns a reference and we need the JobResult to survive beyond the function call
     JobResult _result{};
+
+    void init_job();
 };
 
 
