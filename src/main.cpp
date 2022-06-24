@@ -16,11 +16,14 @@
 #include "client.hpp"
 #include "util/sys/thread_pool.hpp"
 #include "interface/api/job_streamer.hpp"
+#include "comm/host_comm.hpp"
+#include "data/job_transfer.hpp"
 
 #ifndef MALLOB_VERSION
 #define MALLOB_VERSION "(dbg)"
 #endif
 
+bool monoJobDone = false;
 void introduceMonoJob(Parameters& params, Client& client) {
 
     // Write a job JSON for the singular job to solve
@@ -37,7 +40,10 @@ void introduceMonoJob(Parameters& params, Client& client) {
         json["cpu-limit"] = std::to_string(params.jobCpuLimit()) + "s";
     }
 
-    auto result = client.getAPI().submit(json, APIConnector::CALLBACK_IGNORE);
+    auto result = client.getAPI().submit(json, [&](nlohmann::json& response) {
+        // Job done? => Terminate all processes
+        monoJobDone = true;
+    });
     if (result != JsonInterface::Result::ACCEPT) {
         LOG(V0_CRIT, "[ERROR] Cannot introduce mono job!\n");
         abort();
@@ -93,9 +99,17 @@ void doMainProgram(MPI_Comm& commWorkers, MPI_Comm& commClients, Parameters& par
         Terminator::setTerminating();
     });
 
+    // Deposit information to coordinate the creation of an intra-machine communicator
+    HostComm hostComm(commWorkers, params);
+    hostComm.depositInformation();
+
     LOG(V5_DEBG, "Global init barrier ...\n");
     MPI_Barrier(MPI_COMM_WORLD);
     LOG(V5_DEBG, "Passed global init barrier\n");
+
+    // Create intra-machine communicator (collective operation)
+    hostComm.create();
+    if (isWorker) worker->setHostComm(hostComm);
 
     // If mono solving mode is enabled, introduce the singular job to solve
     if (params.monoFilename.isSet() && isClient && MyMpi::rank(commClients) == 0)
@@ -122,6 +136,10 @@ void doMainProgram(MPI_Comm& commWorkers, MPI_Comm& commClients, Parameters& par
             break;
         if (params.sleepMicrosecs() > 0) usleep(params.sleepMicrosecs());
         if (params.yield()) std::this_thread::yield();
+        if (monoJobDone) {
+            // Terminate all processes
+            MyMpi::isend(0, MSG_DO_EXIT, IntVec({0}));
+        }
     }
 
     // Clean up
@@ -139,22 +157,23 @@ int main(int argc, char *argv[]) {
     
     MyMpi::init();
     Timer::init();
+    Proc::nameThisThread("MainThread");
 
     int numNodes = MyMpi::size(MPI_COMM_WORLD);
     int rank = MyMpi::rank(MPI_COMM_WORLD);
 
     longStartupWarnMsg(rank, "Init'd MPI");
 
-    // Initialize bookkeeping of child processes and signals
-    Process::init(rank);
-
-    longStartupWarnMsg(rank, "Init'd process");
-
     Parameters params;
     params.init(argc, argv);
     if (rank == 0) params.printBanner();
 
     longStartupWarnMsg(rank, "Init'd params");
+
+    // Initialize bookkeeping of child processes and signals
+    Process::init(rank, params.traceDirectory());
+
+    longStartupWarnMsg(rank, "Init'd process");
 
     bool quiet = params.quiet();
     if (params.zeroOnlyLogging() && rank > 0) quiet = true;
@@ -171,7 +190,7 @@ int main(int argc, char *argv[]) {
     longStartupWarnMsg(rank, "Init'd message queue");
 
     if (rank == 0)
-        params.printParams();
+        LOG(V2_INFO, "Program options: %s\n", params.getParamsAsString().c_str());
     if (params.help()) {
         // Help requested or no job input provided
         if (rank == 0) {
@@ -194,6 +213,7 @@ int main(int argc, char *argv[]) {
         return rank < params.numWorkers();
     };
     auto isClient = [&](int rank) {
+        if (params.monoFilename.isSet()) return rank == 0;
         if (params.numClients() == -1) return true;
         return rank >= numNodes - params.numClients();
     };

@@ -15,10 +15,8 @@
 #include "util/sys/proc.hpp"
 #include "util/sys/thread_pool.hpp"
 #include "data/checksum.hpp"
-#include "app/sat/horde_process.hpp"
-
-#include "app/sat/horde_process_adapter.hpp"
-#include "hordesat/horde.hpp"
+#include "execution/sat_process.hpp"
+#include "util/sys/fileutils.hpp"
 
 #ifndef MALLOB_VERSION
 #define MALLOB_VERSION "(dbg)"
@@ -28,7 +26,7 @@ int main(int argc, char *argv[]) {
     
     Parameters params;
     params.init(argc, argv);
-    HordeConfig config(params.hordeConfig());
+    SatProcessConfig config(params.satEngineConfig());
 
     timespec t;
     t.tv_sec = config.starttimeSecs;
@@ -42,12 +40,14 @@ int main(int argc, char *argv[]) {
     ProcessWideThreadPool::init(1);
 
     // Initialize signal handlers
-    Process::init(rankOfParent, /*leafProcess=*/true);
+    Process::init(rankOfParent, params.traceDirectory(), /*leafProcess=*/true);
 
     std::string logdir = params.logDirectory();
     std::string logFilename = "subproc" + std::string(".") + std::to_string(rankOfParent);
+    bool quiet = params.quiet();
+    if (params.zeroOnlyLogging() && rankOfParent > 0) quiet = true;
     Logger::init(rankOfParent, params.verbosity(), params.coloredOutput(), 
-            params.quiet(), /*cPrefix=*/params.monoFilename.isSet(),
+            quiet, /*cPrefix=*/params.monoFilename.isSet(),
             !logdir.empty() ? &logdir : nullptr,
             &logFilename);
     Logger::getMainInstance().setLinePrefix(" <" + config.getJobStr() + ">");
@@ -55,9 +55,12 @@ int main(int argc, char *argv[]) {
     pid_t pid = Proc::getPid();
     LOG(V3_VERB, "Mallob SAT engine %s pid=%lu\n", MALLOB_VERSION, pid);
     
+    // Clean up subprocess command tmp file
+    FileUtils::rm("/tmp/mallob_subproc_cmd_" + std::to_string(pid));
+    
     try {
         // Launch program
-        HordeProcess p(params, config, Logger::getMainInstance());
+        SatProcess p(params, config, Logger::getMainInstance());
         p.run(); // does not return
 
     } catch (const std::exception &ex) {

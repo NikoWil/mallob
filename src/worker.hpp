@@ -20,6 +20,7 @@
 #include "balancing/collective_assignment.hpp"
 #include "util/periodic_event.hpp"
 #include "util/sys/watchdog.hpp"
+#include "comm/host_comm.hpp"
 
 /*
 Primary actor in the system who is responsible for participating in the scheduling and execution of jobs.
@@ -50,16 +51,21 @@ private:
     float _node_memory_gbs = 0;
     double _mainthread_cpu_share = 0;
     float _mainthread_sys_share = 0;
+    unsigned long _machine_free_kbs = 0;
+    unsigned long _machine_total_kbs = 0;
 
     robin_hood::unordered_map<std::pair<int, int>, JobResult, IntPairHasher> _pending_results;
 
     robin_hood::unordered_map<int, int> _send_id_to_job_id;
+
+    HostComm* _host_comm;
 
 public:
     Worker(MPI_Comm comm, Parameters& params);
     ~Worker();
     void init();
     void advance(float time = -1);
+    void setHostComm(HostComm& hostComm) {_host_comm = &hostComm;}
 
 private:
     void handleRequestNode(MessageHandle& handle, JobDatabase::JobRequestMode mode);

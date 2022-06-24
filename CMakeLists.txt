@@ -14,7 +14,9 @@ if (CMAKE_BUILD_TYPE MATCHES DEBUG)
 else ()
     add_definitions(-DMALLOB_VERSION=\"rls\")
     set(MY_DEBUG_OPTIONS "-rdynamic -g -ggdb")
-    if (MALLOB_ASSERT)
+    if(MALLOB_ASSERT_HEAVY)
+        add_definitions(-DMALLOB_ASSERT=2)
+    elseif(MALLOB_ASSERT)
         add_definitions(-DMALLOB_ASSERT=1)
     endif ()
 endif ()
@@ -23,9 +25,13 @@ if (MALLOB_LOG_VERBOSITY)
     add_definitions(-DLOGGER_STATIC_VERBOSITY=${MALLOB_LOG_VERBOSITY})
 endif ()
 
-if (MALLOB_USE_ASAN)
-    set(MY_DEBUG_OPTIONS "${MY_DEBUG_OPTIONS} -fno-omit-frame-pointer -fsanitize=address -static-libasan")
-endif ()
+if(MALLOB_SUBPROC_DISPATCH_PATH)
+    add_definitions(-DMALLOB_SUBPROC_DISPATCH_PATH=${MALLOB_SUBPROC_DISPATCH_PATH})
+endif()
+
+if(MALLOB_USE_ASAN)
+    set(MY_DEBUG_OPTIONS "${MY_DEBUG_OPTIONS} -fno-omit-frame-pointer -fsanitize=address -static-libasan") 
+endif()
 
 if (MALLOB_USE_TBBMALLOC)
     set(BASE_LIBS tbbmalloc_proxy ${BASE_LIBS})
@@ -49,14 +55,14 @@ set(MALLOB_SOLVERS "lingeling yalsat cadical kissat") # add new default solvers 
 if (MALLOB_USE_GLUCOSE)
     set(MALLOB_SOLVERS "${MALLOB_SOLVERS} glucose")
     link_directories(lib/glucose)
-    set(BASE_SOURCES ${BASE_SOURCES} src/app/sat/hordesat/solvers/glucose.cpp)
+    set(BASE_SOURCES ${BASE_SOURCES} src/app/sat/solvers/glucose.cpp)
     set(BASE_LIBS ${BASE_LIBS} glucose)
     set(BASE_INCLUDES ${BASE_INCLUDES} lib/glucose)
     add_definitions(-DMALLOB_USE_GLUCOSE)
 endif ()
 if (MALLOB_USE_MERGESAT)
     link_directories(lib/mergesat)
-    set(BASE_SOURCES ${BASE_SOURCES} src/app/sat/hordesat/solvers/mergesat.cpp)
+    set(BASE_SOURCES ${BASE_SOURCES} src/app/sat/solvers/mergesat.cpp)
     set(BASE_LIBS ${BASE_LIBS} mergesat)
     add_definitions(-DMALLOB_USE_MERGESAT)
 endif ()
@@ -66,23 +72,24 @@ endif ()
 # Source files
 
 set(BASE_SOURCES ${BASE_SOURCES}
-        src/app/job.cpp
-        src/app/dummy/dummy_reader.cpp
-        src/app/sat/anytime_sat_clause_communicator.cpp src/app/sat/forked_sat_job.cpp src/app/sat/horde_config.cpp src/app/sat/horde_process_adapter.cpp
-        src/app/sat/hordesat/horde.cpp
-        src/app/sat/hordesat/sharing/adaptive_clause_database.cpp src/app/sat/hordesat/sharing/buffer_merger.cpp src/app/sat/hordesat/sharing/buffer_reader.cpp src/app/sat/hordesat/sharing/clause_slot.cpp src/app/sat/hordesat/sharing/lockfree_clause_database.cpp src/app/sat/hordesat/sharing/default_sharing_manager.cpp
-        src/app/sat/hordesat/solvers/cadical.cpp src/app/sat/hordesat/solvers/lingeling.cpp src/app/sat/hordesat/solvers/kissat.cpp src/app/sat/hordesat/solvers/portfolio_solver_interface.cpp src/app/sat/hordesat/solvers/solver_thread.cpp src/app/sat/hordesat/solvers/solving_state.cpp
-        src/app/sat/hordesat/utilities/buffer_manager.cpp src/app/sat/hordesat/utilities/clause_database.cpp src/app/sat/hordesat/utilities/clause_filter.cpp
-        src/app/sat/threaded_sat_job.cpp
-        src/balancing/collective_assignment.cpp src/balancing/event_driven_balancer.cpp
-        src/comm/message_queue.cpp src/comm/mpi_base.cpp src/comm/mympi.cpp
-        src/data/job_database.cpp src/data/job_description.cpp src/data/job_reader.cpp src/data/job_result.cpp src/data/job_transfer.cpp
-        src/interface/json_interface.cpp src/interface/api/api_connector.cpp
-        src/scheduling/job_scheduling_update.cpp
-        src/util/logger.cpp src/util/option.cpp src/util/params.cpp src/util/permutation.cpp src/util/random.cpp src/util/sat_reader.cpp
-        src/util/sys/atomics.cpp src/util/sys/fileutils.cpp src/util/sys/process.cpp src/util/sys/proc.cpp src/util/sys/shared_memory.cpp src/util/sys/terminator.cpp src/util/sys/threading.cpp src/util/sys/thread_pool.cpp src/util/sys/timer.cpp src/util/sys/watchdog.cpp
-        src/util/ringbuf/ringbuf.c
-        src/app/tohtn/tohtn_reader.cpp src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_simple_job.cpp src/app/tohtn/tohtn_simple_job.hpp)
+    src/app/job.cpp 
+    src/app/dummy/dummy_reader.cpp
+    src/app/sat/execution/engine.cpp src/app/sat/execution/solver_thread.cpp src/app/sat/execution/solving_state.cpp
+    src/app/sat/job/anytime_sat_clause_communicator.cpp src/app/sat/job/forked_sat_job.cpp src/app/sat/job/threaded_sat_job.cpp src/app/sat/job/sat_process_adapter.cpp src/app/sat/job/sat_process_config.cpp 
+    src/app/sat/sharing/buffer/adaptive_clause_database.cpp src/app/sat/sharing/buffer/buffer_merger.cpp src/app/sat/sharing/buffer/buffer_reader.cpp
+    src/app/sat/sharing/filter/clause_filter.cpp
+    src/app/sat/sharing/sharing_manager.cpp
+    src/app/sat/solvers/cadical.cpp src/app/sat/solvers/kissat.cpp src/app/sat/solvers/lingeling.cpp src/app/sat/solvers/portfolio_solver_interface.cpp
+    src/balancing/collective_assignment.cpp src/balancing/event_driven_balancer.cpp 
+    src/comm/message_queue.cpp src/comm/mpi_base.cpp src/comm/mympi.cpp 
+    src/data/job_database.cpp src/data/job_description.cpp src/data/job_reader.cpp src/data/job_result.cpp src/data/job_transfer.cpp 
+    src/interface/json_interface.cpp src/interface/api/api_connector.cpp
+    src/scheduling/job_scheduling_update.cpp
+    src/util/logger.cpp src/util/option.cpp src/util/params.cpp src/util/permutation.cpp src/util/random.cpp src/util/sat_reader.cpp 
+    src/util/sys/atomics.cpp src/util/sys/fileutils.cpp src/util/sys/process.cpp src/util/sys/proc.cpp src/util/sys/shared_memory.cpp src/util/sys/terminator.cpp src/util/sys/threading.cpp src/util/sys/thread_pool.cpp src/util/sys/timer.cpp src/util/sys/watchdog.cpp
+    src/util/ringbuf/ringbuf.c
+    src/app/tohtn/tohtn_reader.cpp src/app/tohtn/tohtn_reader.hpp src/app/tohtn/tohtn_simple_job.cpp src/app/tohtn/tohtn_simple_job.hpp
+)
 
 
 # Library with source files common to mallob and mallob_sat_process
@@ -112,19 +119,23 @@ target_link_libraries(mallob_tohtn PRIVATE ${BASE_LIBS} mallob_commons
         ${PROJECT_SOURCE_DIR}/src/app/tohtn/crowd/libcrowd.a
         ${PROJECT_SOURCE_DIR}/lib/pandaPIparser/libpandaPIparser.a)
 
-# Executables: mallob and mallob_sat_process
+# Executables
 
 add_executable(mallob src/client.cpp src/worker.cpp src/main.cpp)
 add_executable(mallob_sat_process src/app/sat/main.cpp)
+add_executable(mallob_process_dispatcher src/app/sat/process_dispatcher.cpp)
 
 target_include_directories(mallob PRIVATE ${BASE_INCLUDES})
 target_include_directories(mallob_sat_process PRIVATE ${BASE_INCLUDES})
+target_include_directories(mallob_process_dispatcher PRIVATE ${BASE_INCLUDES})
 
 target_compile_options(mallob PRIVATE ${BASE_COMPILEFLAGS})
 target_compile_options(mallob_sat_process PRIVATE ${BASE_COMPILEFLAGS})
+target_compile_options(mallob_process_dispatcher PRIVATE ${BASE_COMPILEFLAGS})
 
 target_link_libraries(mallob ${BASE_LIBS} mallob_commons mallob_tohtn)
 target_link_libraries(mallob_sat_process ${BASE_LIBS} mallob_commons)
+target_link_libraries(mallob_process_dispatcher ${BASE_LIBS} mallob_commons)
 
 
 # Debug flags to find line numbers in stack traces etc.
@@ -150,9 +161,12 @@ new_test(permutation)
 new_test(sat_reader)
 new_test(ringbuffer)
 new_test(clause_database)
+new_test(import_buffer)
 new_test(clause_filter)
 new_test(variable_translator)
 new_test(job_description)
 new_test(message_queue)
 new_test(volume_calculator)
 new_test(concurrent_malloc)
+new_test(distributed_clause_filter)
+new_test(hashing)

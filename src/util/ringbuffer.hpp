@@ -10,9 +10,8 @@
 #include <list>
 #include <atomic>
 
+#include "util/sys/threading.hpp"
 #include "util/logger.hpp"
-#include "app/sat/hordesat/utilities/clause.hpp"
-using namespace Mallob;
 
 #include "util/ringbuf/ringbuf.h"
 
@@ -93,6 +92,195 @@ public:
     bool isNull() const {return _ringbuf == nullptr;}
 };
 
+
+class RingBufferV2 {
+
+public:
+    enum OperationMode {UNIFORM_SIZE, INDIVIDUAL_SIZES};
+
+private:
+    OperationMode _mode = INDIVIDUAL_SIZES;
+    uint8_t* _data = nullptr;
+    ringbuf_t* _ringbuf = nullptr;
+    std::vector<ringbuf_worker_t*> _producers;
+    size_t _capacity_bytes = 0;
+
+    size_t _bytes_per_elem; // UNIFORM_SIZE
+
+    std::vector<uint8_t> _consumed_buffer;
+    int _num_consumed_bytes = 0;
+    Mutex _consume_mutex;
+
+public:
+    RingBufferV2() {}
+    RingBufferV2(size_t size, int sizePerElem, int numProducers = 1, uint8_t* data = nullptr) :
+            _mode(UNIFORM_SIZE), _data(data), _capacity_bytes(sizeof(int)*size), 
+            _bytes_per_elem(sizeof(int)*sizePerElem) {
+        init(numProducers);
+    }
+    RingBufferV2(size_t size, int numProducers = 1, uint8_t* data = nullptr) : 
+            _mode(INDIVIDUAL_SIZES), _data(data), _capacity_bytes(sizeof(int)*size) {
+        init(numProducers);
+    }
+    RingBufferV2(RingBufferV2&& moved) : _mode(moved._mode), _data(moved._data), _ringbuf(moved._ringbuf), 
+        _producers(std::move(moved._producers)), _capacity_bytes(moved._capacity_bytes), 
+        _bytes_per_elem(moved._bytes_per_elem), _consumed_buffer(std::move(moved._consumed_buffer)), 
+        _num_consumed_bytes(moved._num_consumed_bytes) {
+        
+        moved._data = nullptr;
+        moved._ringbuf = nullptr;
+    }
+
+    // Insert a data element consisting of an array of integers.
+    // If the operation mode is UNIFORM_SIZE, only the data pointer and producer ID are to be provided.
+    // Otherwise, numIntegers must indicate the size of the provided data, and headerByte
+    // can be any kind of data from which the user is able to decode back the element's size.
+    bool produce(const int* data, int producerId, int numIntegers = -1, uint8_t headerByte = 0) {
+        
+        if (numIntegers == -1) {
+            assert(_mode == OperationMode::UNIFORM_SIZE);
+            numIntegers = _bytes_per_elem/sizeof(int);
+        } else {
+            assert(_mode == OperationMode::INDIVIDUAL_SIZES);
+            assert(0 < numIntegers && numIntegers <= 255);
+        }
+        assert(producerId >= 0 || LOG_RETURN_FALSE("producer ID %i\n", producerId));
+        assert(producerId < _producers.size() || LOG_RETURN_FALSE("producer ID %i\n", producerId));
+        int numBytes = sizeof(int)*numIntegers;
+
+        int requestedNumBytes = numBytes + (_mode == INDIVIDUAL_SIZES ? 1 : 0);
+        ssize_t offset = ringbuf_acquire(_ringbuf, _producers[producerId], requestedNumBytes);
+        if (offset == -1) return false;
+        
+        if (_mode == INDIVIDUAL_SIZES) {
+            _data[offset] = headerByte;
+            offset++;
+        }
+        memcpy(_data+offset, data, numBytes);
+        ringbuf_produce(_ringbuf, _producers[producerId]);
+        return true;
+    }
+
+    // Only for INDIVIDUAL_SIZES: Get the header byte of the next element to be consumed.
+    // The user must be able to decode the size of the next element from it.
+    // If no elements are ready for consumption, returns false.
+    bool getNextHeaderByte(uint8_t& peekedNumber) {
+        assert(_mode == OperationMode::INDIVIDUAL_SIZES);
+        
+        refillConsumeBuffer();
+        if (_num_consumed_bytes != 0) {
+            int start = _consumed_buffer.size() - _num_consumed_bytes;
+            peekedNumber = _consumed_buffer[start];
+            return true;
+        }
+        return false;
+    }
+
+    // Only for INDIVIDUAL_SIZES: Consume the next element. The size of this element
+    // has to be provided via numIntegers (the user must be able to decode this size 
+    // from the result of getNextHeaderByte). The provided vector will append an integer
+    // containing the header byte followed by numIntegers integers with the actual payload.
+    bool consume(int numIntegers, std::vector<int>& out) {
+        
+        refillConsumeBuffer();
+        bool success = _num_consumed_bytes != 0;
+        if (success) {
+            int start = _consumed_buffer.size() - _num_consumed_bytes;
+            assert(start >= 0);
+            auto oldSize = out.size();
+            int indicatorIndivSizes = (_mode == INDIVIDUAL_SIZES ? 1:0);
+            out.resize(out.size()+indicatorIndivSizes+numIntegers);
+            if (_mode == INDIVIDUAL_SIZES) out[oldSize] = (int) _consumed_buffer[start];
+            memcpy(((uint8_t*)out.data())+(oldSize+indicatorIndivSizes)*sizeof(int), 
+                _consumed_buffer.data()+start+indicatorIndivSizes, 
+                numIntegers*sizeof(int));
+            _num_consumed_bytes -= indicatorIndivSizes+numIntegers*sizeof(int); // "resize" consume buffer
+        }
+        return success;
+    }
+    bool consume(int numIntegers, uint8_t*& out) {
+        
+        refillConsumeBuffer();
+        bool success = _num_consumed_bytes != 0;
+        if (success) {
+            int start = _consumed_buffer.size() - _num_consumed_bytes;
+            assert(start >= 0);
+            int indicatorIndivSizes = (_mode == INDIVIDUAL_SIZES ? 1:0);
+            if (_mode == INDIVIDUAL_SIZES) out[0] = _consumed_buffer[start];
+            memcpy(out+indicatorIndivSizes, _consumed_buffer.data()+start+indicatorIndivSizes, 
+                numIntegers*sizeof(int));
+            _num_consumed_bytes -= indicatorIndivSizes+numIntegers*sizeof(int); // "resize" consume buffer
+            out += indicatorIndivSizes+numIntegers*sizeof(int);
+        }
+        return success;
+    }
+    
+    // Only for UNIFORM_SIZE: Consume the next element and append it to the provided vector.
+    bool consume(std::vector<int>& out) {
+        assert(_mode == UNIFORM_SIZE);
+        return consume(_bytes_per_elem/sizeof(int), out);
+    }
+    bool consume(uint8_t*& out) {
+        assert(_mode == UNIFORM_SIZE);
+        return consume(_bytes_per_elem/sizeof(int), out);
+    }
+
+    void acquireConsumeLock() {
+        _consume_mutex.lock();
+    }
+    void releaseConsumeLock() {
+        _consume_mutex.unlock();
+    }
+
+    uint8_t* releaseBuffer() {
+        if (isNull()) return nullptr;
+        auto out = _data;
+        free(_ringbuf);
+        _ringbuf = nullptr;
+        return out;
+    }
+
+    size_t getCapacity() const {
+        return _capacity_bytes/sizeof(int);
+    }
+
+    ~RingBufferV2() {
+        if (!isNull()) {
+            free(_ringbuf);
+            free(_data);
+        }
+    }
+
+    bool isNull() const {return _ringbuf == nullptr;}
+
+private:
+    void init(int numProducers) {
+        size_t ringbufSize;
+        ringbuf_get_sizes(/*nworkers=*/numProducers, &ringbufSize, nullptr);
+        _ringbuf = (ringbuf_t*)malloc(ringbufSize);
+        ringbuf_setup(_ringbuf, /*nworkers=*/numProducers, _capacity_bytes);
+        for (int i = 0; i < numProducers; i++) {
+            _producers.push_back(ringbuf_register(_ringbuf, /*worker_id=*/i));
+        }
+        if (_data == nullptr) _data = (uint8_t*)malloc(_capacity_bytes);
+        _consumed_buffer.reserve(_capacity_bytes);
+    }
+    void refillConsumeBuffer() {
+        if (_num_consumed_bytes > 0) return;
+        // Fetch batch of clauses from ringbuffer
+        size_t offset;
+        _num_consumed_bytes = ringbuf_consume(_ringbuf, &offset);
+        if (_num_consumed_bytes > 0) {
+            _consumed_buffer.resize(_num_consumed_bytes);
+            memcpy(_consumed_buffer.data(), 
+                    _data+offset, 
+                    _num_consumed_bytes);
+            ringbuf_release(_ringbuf, _num_consumed_bytes);   
+        }
+    }
+};
+
+
 class RingBuffer {
 
 private:
@@ -103,6 +291,7 @@ private:
 
     std::vector<int> _consumed_buffer;
     int _consumed_size = 0;
+    Mutex _consume_mutex;
 
 public:
     RingBuffer() {}
@@ -115,6 +304,13 @@ public:
             _producers.push_back(ringbuf_register(_ringbuf, /*worker_id=*/i));
         }
         if (_data == nullptr) _data = (uint8_t*)malloc(sizeof(int)*size);
+    }
+    RingBuffer(RingBuffer&& moved) : _data(moved._data), _ringbuf(moved._ringbuf), 
+        _producers(std::move(moved._producers)), _capacity(moved._capacity), 
+        _consumed_buffer(std::move(moved._consumed_buffer)), _consumed_size(moved._consumed_size) {
+        
+        moved._data = nullptr;
+        moved._ringbuf = nullptr;
     }
 
     bool produce(const int* data, size_t size, int prefixOrZero, bool appendZero, int producerId = 0) {
@@ -148,15 +344,19 @@ public:
 
         if (_consumed_size == 0) {
             // Fetch batch of clauses from ringbuffer
+            if (!_consume_mutex.tryLock()) return false;
             size_t offset;
             _consumed_size = ringbuf_consume(_ringbuf, &offset);
-            if (_consumed_size <= 0) return false;
-            if (_consumed_buffer.size() < _consumed_size) 
-                _consumed_buffer.resize(_consumed_size);
-            memcpy(_consumed_buffer.data(), 
-                    _data+sizeof(int)*offset, 
-                    _consumed_size*sizeof(int));
-            ringbuf_release(_ringbuf, _consumed_size);
+            if (_consumed_size > 0) {
+                if (_consumed_buffer.size() < _consumed_size) 
+                    _consumed_buffer.resize(_consumed_size);
+                memcpy(_consumed_buffer.data(), 
+                        _data+sizeof(int)*offset, 
+                        _consumed_size*sizeof(int));
+                ringbuf_release(_ringbuf, _consumed_size);   
+            }
+            _consume_mutex.unlock();
+            if (_consumed_size <= 0) return false; 
         }
         
         // Extract a clause from the consumed buffer
@@ -188,6 +388,26 @@ public:
         return out;
     }
 
+    size_t flushBuffer(uint8_t* otherBuffer) {
+
+        auto lock = _consume_mutex.getLock();
+
+        // Flush ring buffer into provided swap buffer
+        size_t offset;
+        size_t consumedSize = ringbuf_consume(_ringbuf, &offset);
+        size_t writePosition = 0;
+        while (consumedSize > 0) {
+            memcpy((void*)(otherBuffer+sizeof(int)*writePosition), 
+                    (void*)(_data+sizeof(int)*offset), 
+                    consumedSize*sizeof(int));
+            writePosition += consumedSize;
+            ringbuf_release(_ringbuf, consumedSize);
+            consumedSize = ringbuf_consume(_ringbuf, &offset);
+        }
+        // Return end of written data
+        return writePosition;
+    }
+
     size_t getCapacity() const {
         return _capacity;
     }
@@ -200,79 +420,6 @@ public:
     }
 
     bool isNull() const {return _ringbuf == nullptr;}
-};
-
-class UniformSizeClauseRingBuffer {
-
-protected:
-    RingBuffer _ringbuf;
-    int _clause_size;
-
-public:
-    UniformSizeClauseRingBuffer() {}
-    UniformSizeClauseRingBuffer(size_t ringbufSize, int clauseSize, int numProducers = 1, uint8_t* data = nullptr) : 
-        _ringbuf(ringbufSize, numProducers, data), _clause_size(clauseSize) {}
-    
-    bool isNull() {return _ringbuf.isNull();}
-    virtual bool insertClause(const Clause& c, int producerId = 0) {
-        assert(c.size == _clause_size);
-        return _ringbuf.produce(c.begin, _clause_size, c.lbd, false, producerId);
-    }
-    virtual bool getClause(std::vector<int>& out) {
-        return _ringbuf.consume(_clause_size+1, out);
-    }
-    uint8_t* releaseBuffer() {
-        return _ringbuf.releaseBuffer();
-    }
-};
-
-class UniformClauseRingBuffer : public UniformSizeClauseRingBuffer {
-
-public:
-    UniformClauseRingBuffer(size_t ringbufSize, int clauseSize, int numProducers = 1, uint8_t* data = nullptr) : 
-        UniformSizeClauseRingBuffer(ringbufSize, clauseSize, numProducers, data) {}
-    bool insertClause(const Clause& c, int producerId = 0) override {
-        assert(c.size == _clause_size);
-        return _ringbuf.produce(c.begin, _clause_size, 0, false, producerId);
-    }
-    bool getClause(std::vector<int>& out) override {
-        return _ringbuf.consume(_clause_size, out);
-    }
-};
-
-class MixedNonunitClauseRingBuffer {
-
-private:
-    RingBuffer _ringbuf;
-
-public:
-    MixedNonunitClauseRingBuffer(size_t ringbufSize, int numProducers = 1) : _ringbuf(ringbufSize, numProducers) {}
-    
-    bool insertClause(const Clause& c, int producerId = 0) {
-        return _ringbuf.produce(c.begin, c.size, c.lbd, true, producerId);
-    }
-    bool insertClause(const int* begin, int sizeWithLbd, int producerId = 0) {
-        return _ringbuf.produce(begin, sizeWithLbd, 0, true, producerId);
-    }
-    bool getClause(std::vector<int>& out) {
-        return _ringbuf.consume(0, out);
-    }
-};
-
-class UnitClauseRingBuffer {
-
-private:
-    RingBuffer _ringbuf;
-
-public:
-    UnitClauseRingBuffer(size_t ringbufSize, int numProducers = 1) : _ringbuf(ringbufSize, numProducers) {}
-
-    bool insertUnit(int lit, int producerId = 0) {
-        return _ringbuf.produce(&lit, 1, 0, false, producerId);
-    }
-    bool getUnits(std::vector<int>& out) {
-        return _ringbuf.consume(0, out);
-    }
 };
 
 #endif

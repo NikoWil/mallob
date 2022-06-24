@@ -110,10 +110,17 @@ struct JobMessage : public Serializable {
     int revision;
     int tag;
     int epoch;
+    bool returnedToSender = false;
     Checksum checksum;
     std::vector<int> payload;
 
 public:
+    JobMessage() {}
+    JobMessage(int jobId, int revision, int epoch, int tag) : 
+        jobId(jobId), revision(revision), tag(tag), epoch(epoch) {}
+    JobMessage(int jobId, int revision, int epoch, int tag, std::initializer_list<int> payload) : 
+        jobId(jobId), revision(revision), tag(tag), epoch(epoch), payload(payload) {}
+
     std::vector<uint8_t> serialize() const override;
     JobMessage& deserialize(const std::vector<uint8_t>& packed) override;
 };

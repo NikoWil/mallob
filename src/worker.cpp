@@ -9,10 +9,6 @@
 
 #include "worker.hpp"
 
-#include "app/sat/threaded_sat_job.hpp"
-#include "app/sat/forked_sat_job.hpp"
-#include "app/sat/sat_constants.h"
-
 #include "balancing/event_driven_balancer.hpp"
 #include "data/serializable.hpp"
 #include "data/job_description.hpp"
@@ -28,7 +24,7 @@
 
 Worker::Worker(MPI_Comm comm, Parameters& params) :
     _comm(comm), _world_rank(MyMpi::rank(MPI_COMM_WORLD)), 
-    _params(params), _job_db(_params, _comm, _sys_state), _sys_state(_comm, params.sysstatePeriod()), 
+    _params(params), _job_db(_params, _comm, _sys_state), _sys_state(_comm, params.sysstatePeriod(), SysState<9>::ALLREDUCE), 
     _watchdog(/*enabled=*/_params.watchdog(), /*checkIntervMillis=*/100, Timer::elapsedSeconds())
 {
     _watchdog.setWarningPeriod(50); // warn after 50ms without a reset
@@ -108,6 +104,10 @@ void Worker::init() {
     q.registerCallback(MSG_REQUEST_NODE_ONESHOT, 
         [&](auto& h) {handleRequestNode(h, JobDatabase::JobRequestMode::TARGETED_REJOIN);});
     q.registerCallback(MSG_SEND_APPLICATION_MESSAGE, 
+        [&](auto& h) {handleSendApplicationMessage(h);});
+    q.registerCallback(MSG_JOB_TREE_REDUCTION, 
+        [&](auto& h) {handleSendApplicationMessage(h);});
+    q.registerCallback(MSG_JOB_TREE_BROADCAST, 
         [&](auto& h) {handleSendApplicationMessage(h);});
     q.registerCallback(MSG_SEND_JOB_DESCRIPTION, 
         [&](auto& h) {handleSendJobDescription(h);});
@@ -263,8 +263,20 @@ void Worker::checkStats(float time) {
     // For this process and subprocesses
     if (_node_stats_calculated.load(std::memory_order_acquire)) {
         
+        // Update local sysstate, log update
         _sys_state.setLocal(SYSSTATE_GLOBALMEM, _node_memory_gbs);
         LOG(V4_VVER, "mem=%.2fGB mt_cpu=%.3f mt_sys=%.3f\n", _node_memory_gbs, _mainthread_cpu_share, _mainthread_sys_share);
+
+        // Update host-internal communicator
+        if (_host_comm) {
+            _host_comm->setRamUsageThisWorkerGbs(_node_memory_gbs);
+            _host_comm->setFreeAndTotalMachineMemoryKbs(_machine_free_kbs, _machine_total_kbs);
+            if (_job_db.hasActiveJob()) {
+                _host_comm->setActiveJobIndex(_job_db.getActive().getIndex());
+            } else {
+                _host_comm->unsetActiveJobIndex();
+            }
+        }
 
         // Recompute stats for next query time
         // (concurrently because computation of PSS is expensive)
@@ -275,6 +287,9 @@ void Worker::checkStats(float time) {
             auto memoryGbs = memoryKbs / 1024.f / 1024.f;
             _node_memory_gbs = memoryGbs;
             Proc::getThreadCpuRatio(tid, _mainthread_cpu_share, _mainthread_sys_share);
+            auto [freeKbs, totalKbs] = Proc::getMachineFreeAndTotalRamKbs();
+            _machine_free_kbs = freeKbs;
+            _machine_total_kbs = totalKbs;
             _node_stats_calculated.store(true, std::memory_order_release);
         });
     }
@@ -294,6 +309,16 @@ void Worker::checkStats(float time) {
                 if (!commStr.empty()) LOG(V4_VVER, "%s job comm:%s\n", job.toStr(), commStr.c_str());
             }
         }
+    }
+
+    if (_host_comm && _host_comm->advanceAndCheckMemoryPanic(time)) {
+        // Memory panic!
+        // Aggressively remove inactive cached jobs
+        _job_db.setMemoryPanic(true);
+        _job_db.forgetOldJobs();
+        _job_db.setMemoryPanic(false);
+        // Trigger memory panic in the active job
+        if (_job_db.hasActiveJob()) _job_db.getActive().appl_memoryPanic();
     }
 }
 
@@ -391,13 +416,13 @@ void Worker::checkActiveJob() {
     }
 
     // Job communication (e.g. clause sharing)
-    if (job.wantsToCommunicate()) job.communicate();
+    job.communicate();
 }
 
 void Worker::publishAndResetSysState() {
 
     if (_world_rank == 0) {
-        float* result = _sys_state.getGlobal();
+        const auto& result = _sys_state.getGlobal();
         int numDesires = result[SYSSTATE_NUMDESIRES];
         int numFulfilledDesires = result[SYSSTATE_NUMFULFILLEDDESIRES];
         float ratioFulfilled = numDesires <= 0 ? 0 : (float)numFulfilledDesires / numDesires;
@@ -701,14 +726,20 @@ void Worker::handleSendApplicationMessage(MessageHandle& handle) {
 
     // Deserialize job-specific message
     JobMessage msg = Serializable::get<JobMessage>(handle.getRecvData());
+
     int jobId = msg.jobId;
     if (!_job_db.has(jobId)) {
         LOG(V1_WARN, "[WARN] Job message from unknown job #%i\n", jobId);
+        if (!msg.returnedToSender) {
+            msg.returnedToSender = true;
+            MyMpi::isend(handle.source, handle.tag, msg);
+        }
         return;
     }
+
     // Give message to corresponding job
     Job& job = _job_db.get(jobId);
-    if (job.getState() == ACTIVE) job.communicate(handle.source, msg);
+    job.communicate(handle.source, handle.tag, msg);
 }
 
 void Worker::handleOfferAdoption(MessageHandle& handle) {
@@ -913,7 +944,7 @@ void Worker::handleNotifyNodeLeavingJob(MessageHandle& handle) {
     }
 
     // Initiate communication if the job now became willing to communicate
-    if (job.wantsToCommunicate()) job.communicate();
+    job.communicate();
 }
 
 void Worker::handleNotifyResultFound(MessageHandle& handle) {

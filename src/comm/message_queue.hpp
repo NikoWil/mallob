@@ -13,7 +13,6 @@
 #include "util/sys/background_worker.hpp"
 #include "util/logger.hpp"
 #include "comm/msgtags.h"
-#include "util/ringbuffer.hpp"
 #include "util/sys/atomics.hpp"
 
 typedef std::shared_ptr<std::vector<uint8_t>> DataPtr;
@@ -170,6 +169,10 @@ private:
             return *this;
         }
 
+        bool isInitiated() {
+            return request != MPI_REQUEST_NULL;
+        }
+
         bool test() {
             assert(valid());
             assert(request != MPI_REQUEST_NULL);
@@ -246,6 +249,8 @@ private:
     MPI_Request _recv_request;
     uint8_t* _recv_data;
     std::list<SendHandle> _self_recv_queue;
+    int _base_num_receives_per_loop = 10;
+    int _num_receives_per_loop = _base_num_receives_per_loop;
 
     // Fragmented messages stuff
     robin_hood::unordered_node_map<std::pair<int, int>, ReceiveFragment, IntPairHasher> _fragmented_messages;
@@ -259,6 +264,8 @@ private:
     // Send stuff
     std::list<SendHandle> _send_queue;
     int _running_send_id = 1;
+    int _num_concurrent_sends = 0;
+    int _max_concurrent_sends = 16;
 
     // Garbage collection
     std::atomic_int _num_garbage = 0;
