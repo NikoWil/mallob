@@ -26,17 +26,17 @@ public:
 
     JobResult &&appl_getResult() override;
 
-    bool appl_wantsToBeginCommunication() override;
+    void appl_communicate() override;
 
-    void appl_beginCommunication() override;
-
-    void appl_communicate(int source, JobMessage &msg) override;
+    void appl_communicate(int source, int mpiTag, JobMessage& msg) override;
 
     void appl_dumpStats() override;
 
     int getDemand() const override;
 
     bool appl_isDestructible() override;
+
+    void appl_memoryPanic() override;
 
     // TODO: is this needed?
     //double getTemperature() const;

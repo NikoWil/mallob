@@ -179,17 +179,7 @@ JobResult &&TohtnMultiJob::appl_getResult() {
     return std::move(_result);
 }
 
-// TODO: remove or implement helper in Crowd
-bool TohtnMultiJob::appl_wantsToBeginCommunication() {
-    std::unique_lock worker_lock{_worker_mutex};
-    if (_worker) {
-        return _worker->has_message();
-    } else {
-        return false;
-    }
-}
-
-void TohtnMultiJob::appl_beginCommunication() {
+void TohtnMultiJob::appl_communicate() {
     std::vector<OutWorkerMessage> worker_messages{};
     {
         std::unique_lock worker_lock{_worker_mutex};
@@ -209,7 +199,7 @@ void TohtnMultiJob::appl_beginCommunication() {
     }
 }
 
-void TohtnMultiJob::appl_communicate(int source, JobMessage &msg) {
+void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage& msg) {
     InWorkerMessage worker_msg;
     worker_msg.tag = msg.tag;
     worker_msg.source = source;
@@ -227,6 +217,10 @@ bool TohtnMultiJob::appl_isDestructible() {
     std::unique_lock worker_lock{_worker_mutex};
     std::unique_lock has_terminated_lock{_has_terminated_mutex};
     return _work_thread.joinable() && _has_terminated && _worker->is_destructible();
+}
+
+void TohtnMultiJob::appl_memoryPanic() {
+    // TODO: clean up memory used for loop detection
 }
 
 TohtnMultiJob::~TohtnMultiJob() {

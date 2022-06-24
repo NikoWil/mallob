@@ -183,15 +183,11 @@ JobResult &&TohtnSimpleJob::appl_getResult() {
     return std::move(_result);
 }
 
-bool TohtnSimpleJob::appl_wantsToBeginCommunication() {
-    return false;
-}
-
-void TohtnSimpleJob::appl_beginCommunication() {
+void TohtnSimpleJob::appl_communicate() {
     // We do not communicate, ever
 }
 
-void TohtnSimpleJob::appl_communicate(int source, JobMessage &msg) {
+void TohtnSimpleJob::appl_communicate(int source, int mpiTag, JobMessage& msg) {
     // We do not expect any messages, ever
 }
 
@@ -214,6 +210,10 @@ bool TohtnSimpleJob::appl_isDestructible() {
     // A thread which has terminated is no longer joinable (hooo-ray!)
     std::unique_lock has_terminated_lock{_has_terminated_mutex};
     return _work_thread.joinable() && _has_terminated;
+}
+
+void TohtnSimpleJob::appl_memoryPanic() {
+    // TODO: if loop detection is performed, clean up the filters here
 }
 
 TohtnSimpleJob::~TohtnSimpleJob() {

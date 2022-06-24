@@ -25,11 +25,9 @@ public:
 
     JobResult&& appl_getResult() override;
 
-    bool appl_wantsToBeginCommunication() override;
+    void appl_communicate() override;
 
-    void appl_beginCommunication() override;
-
-    void appl_communicate(int source, JobMessage& msg) override;
+    void appl_communicate(int source, int mpiTag, JobMessage& msg) override;
 
     void appl_dumpStats() override;
 
@@ -38,7 +36,9 @@ public:
 
     bool appl_isDestructible() override;
 
-    virtual ~TohtnMultiJob() override;
+    void appl_memoryPanic() override;
+
+    ~TohtnMultiJob() override;
 
 private:
     std::string _domain_file_name{};
