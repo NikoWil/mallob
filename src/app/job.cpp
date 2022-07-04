@@ -56,6 +56,24 @@ void Job::updateJobTree(int index, int rootRank, int parentRank) {
 }
 
 void Job::commit(const JobRequest& req) {
+    const char* application;
+    switch (req.application) {
+        case JobDescription::Application::ONESHOT_SAT:
+            application = "ONESHOT_SAT";
+            break;
+        case JobDescription::Application::INCREMENTAL_SAT:
+            application = "INCREMENTAL_SAT";
+            break;
+        case JobDescription::Application::DUMMY:
+            application = "DUMMY";
+            break;
+        case JobDescription::Application::TOHTN:
+            application = "TOHTN";
+            break;
+    }
+
+    LOG(V2_INFO, "Job::commit with application %s\n", application);
+
     assert(getState() != ACTIVE);
     assert(getState() != PAST);
     _commitment = req;

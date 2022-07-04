@@ -16,7 +16,7 @@ void TohtnMultiJob::init_job() {
 
         std::stringstream id_stream;
         id_stream << "job-" << std::to_string(getDescription().getId()) << "_";
-        id_stream << "rank-" << std::to_string(getDescription().getClientRank());
+        id_stream << "rank-" << std::to_string(getJobTree().getIndex());
 
         std::stringstream domain_file_name;
         domain_file_name << "domain_";
@@ -129,8 +129,8 @@ void TohtnMultiJob::appl_terminate() {
 int TohtnMultiJob::appl_solved() {
     std::unique_lock worker_lock{_worker_mutex};
     if (_worker) {
-        LOG(V2_INFO, "Worker %d asked whether plan exists, reports _worker->has_plan = %s\n", this->getId(),
-            _worker->has_plan() ? "true" : "false");
+        LOG(V2_INFO, "appl_solved reports _worker->has_plan = %s, _worker->has_work = %s\n",
+            _worker->has_plan() ? "true" : "false", _worker->has_work() ? "true" : "false");
         return _worker->has_plan() ? 1 : -1;
     } else {
         LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n", this->getId());
@@ -158,6 +158,9 @@ JobResult &&TohtnMultiJob::appl_getResult() {
         _result.result = 10;
 
         const std::string plan_string{std::move(plan_opt.value())};
+
+        LOG(V2_INFO, "Plan:\n%s\n", plan_string.c_str());
+
         std::vector<int> plan_str_as_ints;
         plan_str_as_ints.reserve(plan_string.size());
         for (const auto c: plan_string) {
@@ -191,8 +194,8 @@ void TohtnMultiJob::appl_communicate() {
         job_msg.jobId = getId();
         job_msg.revision = getRevision();
         job_msg.tag = msg.tag;
-        // TODO: job_msg.epoch = ???
-        // TODO: job_msg.checksum = ???
+        // job_msg.epoch and job_msg.checksum can be ignored so far.
+        // TODO: integrate job_msg.epoch once restarts due do loop detection are in use!
         job_msg.payload = std::move(msg.data);
 
         MyMpi::isend(msg.dest, MSG_SEND_APPLICATION_MESSAGE, job_msg);
@@ -206,7 +209,11 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage& msg) {
     worker_msg.data = std::move(msg.payload);
 
     std::unique_lock worker_lock{_worker_mutex};
-    _worker->add_message(worker_msg);
+    if (msg.returnedToSender) {
+        _worker->return_message(worker_msg);
+    } else {
+        _worker->add_message(worker_msg);
+    }
 }
 
 void TohtnMultiJob::appl_dumpStats() {

@@ -45,6 +45,8 @@ public:
 
     [[nodiscard]] virtual bool has_plan() const = 0;
 
+    [[nodiscard]] virtual bool has_work() const = 0;
+
     virtual ~SingleThreadedCrowdWorker() = 0;
 };
 
@@ -61,13 +63,19 @@ public:
     virtual void add_message(InWorkerMessage &message) = 0;
 
     /**
+     * In some cases a message cannot be delivered to the worker it was intended for, e.g. due to the other worker
+     * shutting down in between sending the message and it being delivered. In such a case, the message should be
+     * returned to the original node for handling.
+     * @param message
+     */
+    virtual void return_message(InWorkerMessage& message) = 0;
+
+    /**
      * Get any messages that the CooperativeCrowdWorker wants to send
      * @param worker_ids The worker ids to which a message may be sent
      * @return
      */
     [[nodiscard]] virtual std::vector<OutWorkerMessage> get_messages(const std::vector<int> &worker_ids) = 0;
-
-    [[nodiscard]] virtual bool has_message() const = 0;
 
     /**
      * Tells a CooperativeCrowdWorker to stop any work. This will mean that
@@ -84,6 +92,8 @@ public:
      * @return
      */
     [[nodiscard]] virtual bool is_destructible() = 0;
+
+    virtual void clear() = 0;
 
     ~CooperativeCrowdWorker() override = default;
 };

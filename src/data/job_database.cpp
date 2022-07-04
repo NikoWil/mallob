@@ -41,10 +41,13 @@ JobDatabase::JobDatabase(Parameters &params, MPI_Comm &comm, WorkerSysState &sys
 }
 
 Job &JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescription::Application application) {
-
     switch (application) {
         case JobDescription::Application::ONESHOT_SAT:
+            LOG(V2_INFO, "JobDatabase::createJob with Job ONESHOT_SAT\n");
         case JobDescription::Application::INCREMENTAL_SAT:
+            if (application != JobDescription::Application::ONESHOT_SAT) {
+                LOG(V2_INFO, "JobDatabase::createJob with Job INCREMENTAL_SAT\n");
+            }
             if (_params.applicationSpawnMode() == "fork") {
                 _jobs[jobId] = new ForkedSatJob(_params, commSize, worldRank, jobId, application);
             } else {
@@ -52,10 +55,12 @@ Job &JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescripti
             }
             break;
         case JobDescription::Application::DUMMY:
+            LOG(V2_INFO, "JobDatabase::createJob with Job DUMMY\n");
             _jobs[jobId] = new DummyJob(_params, commSize, worldRank, jobId);
             break;
         case JobDescription::Application::TOHTN:
-            _jobs[jobId] = new TohtnMultiJob(_params, commSize, worldRank, jobId, JobDescription::ONESHOT_SAT);
+            LOG(V2_INFO, "JobDatabase::createJob with Job TOHTN\n");
+            _jobs[jobId] = new TohtnMultiJob(_params, commSize, worldRank, jobId, application);
             break;
     }
     _num_stored_jobs++;
