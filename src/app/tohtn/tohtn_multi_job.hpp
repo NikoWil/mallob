@@ -11,7 +11,7 @@
 
 class TohtnMultiJob : public Job {
 public:
-    TohtnMultiJob(const Parameters &params, int commSize, int worldRank, int jobId, JobDescription::Application appl);
+    TohtnMultiJob(const Parameters& params, const JobSetup& setup);
 
     void appl_start() override;
 

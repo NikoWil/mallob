@@ -9,8 +9,7 @@
 
 #include "tohtn_utils.hpp"
 
-TohtnSimpleJob::TohtnSimpleJob(const Parameters &params, int commSize, int worldRank, int jobId,
-                               JobDescription::Application appl) : Job(params, commSize, worldRank, jobId, appl) {}
+TohtnSimpleJob::TohtnSimpleJob(const Parameters &params, const JobSetup &setup) : Job(params, setup) {}
 
 void TohtnSimpleJob::appl_start() {
     {
@@ -187,7 +186,7 @@ void TohtnSimpleJob::appl_communicate() {
     // We do not communicate, ever
 }
 
-void TohtnSimpleJob::appl_communicate(int source, int mpiTag, JobMessage& msg) {
+void TohtnSimpleJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     // We do not expect any messages, ever
 }
 

@@ -12,7 +12,7 @@
 
 class TohtnSimpleJob : public Job {
 public:
-    TohtnSimpleJob(const Parameters &params, int commSize, int worldRank, int jobId, JobDescription::Application appl);
+    TohtnSimpleJob(const Parameters& params, const JobSetup& setup);
 
     void appl_start() override;
 

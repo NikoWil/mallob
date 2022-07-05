@@ -7,9 +7,7 @@
 #include <utility>
 #include <climits>
 
-#include "app/sat/job/forked_sat_job.hpp"
-#include "app/sat/job/threaded_sat_job.hpp"
-#include "app/dummy/dummy_job.hpp"
+#include "app/app_registry.hpp"
 
 #include "util/sys/timer.hpp"
 #include "util/logger.hpp"
@@ -40,29 +38,16 @@ JobDatabase::JobDatabase(Parameters &params, MPI_Comm &comm, WorkerSysState &sys
     });
 }
 
-Job &JobDatabase::createJob(int commSize, int worldRank, int jobId, JobDescription::Application application) {
-    switch (application) {
-        case JobDescription::Application::ONESHOT_SAT:
-            LOG(V2_INFO, "JobDatabase::createJob with Job ONESHOT_SAT\n");
-        case JobDescription::Application::INCREMENTAL_SAT:
-            if (application != JobDescription::Application::ONESHOT_SAT) {
-                LOG(V2_INFO, "JobDatabase::createJob with Job INCREMENTAL_SAT\n");
-            }
-            if (_params.applicationSpawnMode() == "fork") {
-                _jobs[jobId] = new ForkedSatJob(_params, commSize, worldRank, jobId, application);
-            } else {
-                _jobs[jobId] = new ThreadedSatJob(_params, commSize, worldRank, jobId, application);
-            }
-            break;
-        case JobDescription::Application::DUMMY:
-            LOG(V2_INFO, "JobDatabase::createJob with Job DUMMY\n");
-            _jobs[jobId] = new DummyJob(_params, commSize, worldRank, jobId);
-            break;
-        case JobDescription::Application::TOHTN:
-            LOG(V2_INFO, "JobDatabase::createJob with Job TOHTN\n");
-            _jobs[jobId] = new TohtnMultiJob(_params, commSize, worldRank, jobId, application);
-            break;
-    }
+Job& JobDatabase::createJob(int commSize, int worldRank, int jobId, int applicationId, bool incremental) {
+
+    Job::JobSetup setup;
+    setup.commSize = commSize;
+    setup.worldRank = worldRank;
+    setup.jobId = jobId;
+    setup.applicationId = applicationId;
+    setup.incremental = incremental;
+
+    _jobs[jobId] = app_registry::getJobCreator(applicationId)(_params, setup);
     _num_stored_jobs++;
     return *_jobs[jobId];
 }

@@ -6,8 +6,7 @@
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
 
-TohtnMultiJob::TohtnMultiJob(const Parameters &params, int commSize, int worldRank, int jobId,
-                             JobDescription::Application appl) : Job(params, commSize, worldRank, jobId, appl) {}
+TohtnMultiJob::TohtnMultiJob(const Parameters& params, const JobSetup& setup) : Job(params, setup) {}
 
 void TohtnMultiJob::init_job() {
     {

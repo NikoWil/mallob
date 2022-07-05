@@ -17,9 +17,9 @@
 #include "util/random.hpp"
 #include "app/sat/job/sat_constants.h"
 #include "util/sys/terminator.hpp"
-#include "data/job_reader.hpp"
 #include "util/sys/thread_pool.hpp"
 #include "util/sys/atomics.hpp"
+#include "app/app_registry.hpp"
 
 #include "interface/socket/socket_connector.hpp"
 #include "interface/filesystem/filesystem_connector.hpp"
@@ -90,15 +90,16 @@ void Client::readIncomingJobs() {
                 // Read job
                 int id = foundJob.description->getId();
                 float time = Timer::elapsedSeconds();
-                bool success = true;
+                bool success = false;
                 auto filesList = foundJob.getFilesList();
+                foundJob.description->beginInitialization(foundJob.description->getRevision());
                 if (foundJob.hasFiles()) {
                     LOGGER(log, V3_VERB, "[T] Reading job #%i rev. %i %s ...\n", id, foundJob.description->getRevision(), filesList.c_str());
-                    success = JobReader::read(foundJob.files, foundJob.contentMode, *foundJob.description);
-                } else {
-                    foundJob.description->beginInitialization(foundJob.description->getRevision());
-                    foundJob.description->endInitialization();
+                    success = app_registry::getJobReader(foundJob.description->getApplicationId())(
+                        foundJob.files, *foundJob.description
+                    );
                 }
+                foundJob.description->endInitialization();
                 if (!success) {
                     LOGGER(log, V1_WARN, "[T] [WARN] Unsuccessful read - skipping #%i\n", id);
                 } else {
@@ -374,8 +375,8 @@ void Client::introduceNextJob() {
         nodeRank = p.get(0);
     }
 
-    JobRequest req(jobId, job.getApplication(), /*rootRank=*/-1, /*requestingNodeRank=*/_world_rank, 
-        /*requestedNodeIndex=*/0, /*timeOfBirth=*/time, /*balancingEpoch=*/-1, /*numHops=*/0);
+    JobRequest req(jobId, job.getApplicationId(), /*rootRank=*/-1, /*requestingNodeRank=*/_world_rank, 
+        /*requestedNodeIndex=*/0, /*timeOfBirth=*/time, /*balancingEpoch=*/-1, /*numHops=*/0, job.isIncremental());
     req.revision = job.getRevision();
     req.timeOfBirth = job.getArrival();
 
@@ -427,6 +428,7 @@ void Client::handleJobDone(MessageHandle& handle) {
 
 void Client::handleSendJobResult(MessageHandle& handle) {
 
+
     JobResult jobResult(handle.moveRecvData());
     int jobId = jobResult.id;
     int resultCode = jobResult.result;
@@ -436,48 +438,21 @@ void Client::handleSendJobResult(MessageHandle& handle) {
     JobDescription& desc = *_active_jobs.at(jobId);
     desc.getStatistics().processingTime = Timer::elapsedSeconds() - desc.getStatistics().timeOfScheduling;
 
-    // TODO: create separate logic to write out plans to JSON for automatic verification and stuff
-    if (desc.getApplication() == JobDescription::Application::TOHTN) {
-        LOG(V2_INFO, "Received JobResult");
-        std::vector<int> plan_as_ints{jobResult.extractSolution()};
-        std::string plan_str;
-        plan_str.reserve(plan_as_ints.size());
-        for (const auto i : plan_as_ints) {
-            plan_str.push_back(static_cast<char>(i));
-        }
-
-        // the plan was received by moving out of the jobResult. Move the data back in to not invalidate later logic
-        jobResult.setSolutionToSerialize(plan_as_ints.data(), plan_as_ints.size());
-        jobResult.setSolution(std::move(plan_as_ints));
-        LOG(V2_INFO, "Received JobResult: %s\n", plan_str.c_str());
-    }
-
     // Output response time and solution header
     LOG(V2_INFO, "RESPONSE_TIME #%i %.6f rev. %i\n", jobId, Timer::elapsedSeconds()-desc.getArrival(), revision);
     LOG(V2_INFO, "SOLUTION #%i %s rev. %i\n", jobId, resultCode == RESULT_SAT ? "SAT" : "UNSAT", revision);
 
-    std::string resultString = "s " + std::string(resultCode == RESULT_SAT ? "SATISFIABLE" 
-                        : resultCode == RESULT_UNSAT ? "UNSATISFIABLE" : "UNKNOWN") + "\n";
+    std::string resultString = "s " + std::string(resultCode == RESULT_SAT ? "SATISFIABLE"
+                                                                           : resultCode == RESULT_UNSAT ? "UNSATISFIABLE" : "UNKNOWN") + "\n";
     std::vector<std::string> modelStrings;
-    if ((_params.solutionToFile.isSet() || (_params.monoFilename.isSet() && !_params.omitSolution())) 
-            && resultCode == RESULT_SAT) {
-        std::stringstream modelString;
-        int numAdded = 0;
-        auto solSize = jobResult.getSolutionSize();
-        for (size_t x = 1; x < solSize; x++) {
-            if (numAdded == 0) {
-                modelString << "v ";
-            }
-            modelString << std::to_string(jobResult.getSolution(x)) << " ";
-            numAdded++;
-            bool done = x+1 == solSize;
-            if (numAdded == 20 || done) {
-                if (done) modelString << "0";
-                modelString << "\n";
-                modelStrings.push_back(modelString.str());
-                modelString = std::stringstream();
-                numAdded = 0;
-            }
+    if ((_params.solutionToFile.isSet() || (_params.monoFilename.isSet() && !_params.omitSolution()))
+        && resultCode == RESULT_SAT) {
+        auto json = app_registry::getJobResultFormatter(desc.getApplicationId())(jobResult);
+        if (json.is_array()) {
+            auto jsonArr = json.get<std::vector<std::string>>();
+            for (auto&& str : jsonArr) modelStrings.push_back(std::move(str));
+        } else {
+            modelStrings.push_back(json.get<std::string>());
         }
     }
     if (_params.solutionToFile.isSet()) {
@@ -500,12 +475,13 @@ void Client::handleSendJobResult(MessageHandle& handle) {
 
     if (_json_interface) {
         auto fut = ProcessWideThreadPool::get().addTask(
-            [interface = _json_interface.get(), 
-            result = std::move(jobResult), 
-            stats = desc.getStatistics()]() mutable {
-            
-            interface->handleJobDone(std::move(result), stats);
-        });
+                [interface = _json_interface.get(),
+                        result = std::move(jobResult),
+                        stats = desc.getStatistics(),
+                        applicationId = desc.getApplicationId()]() mutable {
+
+                    interface->handleJobDone(std::move(result), stats, applicationId);
+                });
         _done_job_futures.push_back(std::move(fut));
     }
 
@@ -524,7 +500,8 @@ void Client::handleAbort(MessageHandle& handle) {
         result.id = jobId;
         result.revision = _active_jobs[result.id]->getRevision();
         result.result = 0;
-        _json_interface->handleJobDone(std::move(result), _active_jobs[result.id]->getStatistics());
+        _json_interface->handleJobDone(std::move(result), _active_jobs[result.id]->getStatistics(), 
+            _active_jobs[result.id]->getApplicationId());
     }
 
     finishJob(jobId, /*hasIncrementalSuccessors=*/_active_jobs[jobId]->isIncremental());
