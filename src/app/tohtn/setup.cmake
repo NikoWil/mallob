@@ -1,9 +1,8 @@
 # library: malleable TOHTN planner
 set(TOHTN_SOURCES
-        src/app/tohtn/tohtn_reader.hpp
+        src/app/tohtn/tohtn_reader.cpp
         src/app/tohtn/tohtn_simple_job.cpp
         src/app/tohtn/tohtn_utils.cpp
-        src/app/tohtn/tohtn_simple_job.cpp
         src/app/tohtn/tohtn_multi_job.cpp)
 
 # Add Tohtn sources to Mallob base sources
