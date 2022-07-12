@@ -15,10 +15,10 @@ std::size_t read_file(const std::string &file_name, JobDescription &desc) {
     std::size_t num_chars{0};
     for (std::string line; std::getline(input, line);) {
         for (const char c: line) {
-            desc.addLiteral(c);
+            desc.addTransientData(static_cast<int>(c));
             ++num_chars;
         }
-        desc.addLiteral('\n');
+        desc.addTransientData(static_cast<int>('\n'));
         ++num_chars;
     }
 
@@ -47,8 +47,8 @@ bool TohtnReader::read(const std::vector<std::string> &files, JobDescription &de
         Process::doExit(1);
     }
 
-    desc.addLiteral(static_cast<int>(num_domain_chars));
-    desc.addLiteral(static_cast<int>(num_problem_chars));
+    desc.addTransientData(static_cast<int>(num_domain_chars));
+    desc.addTransientData(static_cast<int>(num_problem_chars));
 
     desc.endInitialization();
     return true;
