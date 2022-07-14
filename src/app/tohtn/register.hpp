@@ -7,7 +7,7 @@
 
 
 void register_mallob_app_tohtn() {
-    app_registry::registerApplication("DUMMY",
+    app_registry::registerApplication("TOHTN",
         // Job reader
         [](const std::vector<std::string>& files, JobDescription& desc) {
             return TohtnReader::read(files, desc);

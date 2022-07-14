@@ -14,6 +14,7 @@ std::size_t read_file(const std::string &file_name, JobDescription &desc) {
 
     std::size_t num_chars{0};
     for (std::string line; std::getline(input, line);) {
+        LOG(V2_INFO, "%s\n");
         for (const char c: line) {
             desc.addTransientData(static_cast<int>(c));
             ++num_chars;
@@ -38,7 +39,9 @@ bool TohtnReader::read(const std::vector<std::string> &files, JobDescription &de
     const auto &domain_file_name{files[0]};
     const auto &problem_file_name{files[1]};
 
+    LOG(V2_INFO, "Domain:\n");
     const std::size_t num_domain_chars{read_file(domain_file_name, desc)};
+    LOG(V2_INFO, "Problem:\n");
     const std::size_t num_problem_chars{read_file(problem_file_name, desc)};
 
     if (num_domain_chars > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
