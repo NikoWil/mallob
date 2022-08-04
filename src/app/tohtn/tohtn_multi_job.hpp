@@ -66,6 +66,8 @@ private:
 
     // Only exists as appl_getResult returns a reference and we need the JobResult to survive beyond the function call
     JobResult _result{};
+    // Bool to ensure that appl_solved() returns true only once per job
+    bool _returned_solved{false};
 
     void init_job();
 };

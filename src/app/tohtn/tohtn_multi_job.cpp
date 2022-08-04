@@ -128,8 +128,16 @@ void TohtnMultiJob::appl_terminate() {
 int TohtnMultiJob::appl_solved() {
     std::unique_lock worker_lock{_worker_mutex};
     if (_worker) {
-        LOG(V2_INFO, "appl_solved reports _worker->has_plan = %s, _worker->has_work = %s\n",
-            _worker->has_plan() ? "true" : "false", _worker->has_work() ? "true" : "false");
+        // Only return 1 once
+        if (_returned_solved) {
+            return -1;
+        }
+        _returned_solved = _worker->has_plan();
+
+        if (_worker->has_plan()) {
+            LOG(V2_INFO, "appl_solved reports _worker->has_plan = %s, _worker->has_work = %s\n",
+                _worker->has_plan() ? "true" : "false", _worker->has_work() ? "true" : "false");
+        }
         return _worker->has_plan() ? 1 : -1;
     } else {
         LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n", this->getId());
@@ -143,9 +151,7 @@ JobResult &&TohtnMultiJob::appl_getResult() {
     {
         std::unique_lock worker_lock{_worker_mutex};
         if (_worker) {
-            LOG(V2_INFO, "_worker->get_plan_string()\n");
             plan_opt = _worker->get_plan_string();
-            LOG(V2_INFO, "worker got plan string optional\n");
         }
     }
 
@@ -158,7 +164,7 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 
         const std::string plan_string{std::move(plan_opt.value())};
 
-        LOG(V2_INFO, "Plan:\n%s\n", plan_string.c_str());
+        //LOG(V2_INFO, "Plan:\n%s\n", plan_string.c_str());
 
         std::vector<int> plan_str_as_ints;
         plan_str_as_ints.reserve(plan_string.size());

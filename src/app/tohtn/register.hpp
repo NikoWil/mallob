@@ -19,7 +19,14 @@ void register_mallob_app_tohtn() {
         // Job solution formatter
         [](const JobResult& result) {
             // An actual application would nicely format the result here ...
-            return nlohmann::json();
+            std::string plan_str{};
+            for (size_t idx{0}; idx < result.getSolutionSize(); ++idx) {
+                plan_str.push_back(static_cast<char>(result.getSolution(idx)));
+            }
+
+            auto json = nlohmann::json{};
+            json["plan"] = plan_str;
+            return json;
         }
     );
 }
