@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <vector>
+#include "worker_types.hpp"
 
 class HtnInstance;
 
@@ -25,18 +26,6 @@ enum class WorkerPlanState {
     PLAN,
 };
 
-struct InWorkerMessage {
-    int tag;
-    int source;
-    std::vector<int> data;
-};
-
-struct OutWorkerMessage {
-    int tag;
-    int dest;
-    std::vector<int> data;
-};
-
 class SingleThreadedCrowdWorker {
 public:
     virtual WorkerPlanState plan_step() = 0;
@@ -46,6 +35,8 @@ public:
     [[nodiscard]] virtual bool has_plan() const = 0;
 
     [[nodiscard]] virtual bool has_work() const = 0;
+
+    virtual void dump_stats() const = 0;
 
     virtual ~SingleThreadedCrowdWorker() = 0;
 };
@@ -68,7 +59,7 @@ public:
      * returned to the original node for handling.
      * @param message
      */
-    virtual void return_message(InWorkerMessage& message) = 0;
+    virtual void return_message(InWorkerMessage &message) = 0;
 
     /**
      * Get any messages that the CooperativeCrowdWorker wants to send
@@ -76,6 +67,38 @@ public:
      * @return
      */
     [[nodiscard]] virtual std::vector<OutWorkerMessage> get_messages(const std::vector<int> &worker_ids) = 0;
+
+    /**
+     * Get the data representing the state of an internal LoopDetector if it exists.
+     * @return
+     */
+    [[nodiscard]] virtual LoopDetectorMessage get_loop_detector_data() = 0;
+
+    /**
+     * Add the data encoded in message to the local LoopDetector for future checks against it. Returns true if the
+     * internal version was increased as a result of the new data. Version increases can happen due to two reasons:
+     * - the version of message is higher than the internal version
+     * - the worker is the root worker and with the new data the internal loop detector filled up completely. As a
+     *   result, the internal version was increased and the search restarted
+     * @param message The LoopDetector to be added
+     * @return True if the internal version was increased as a result of the data, false otherwise.
+     */
+    virtual bool add_loop_detector_data(const LoopDetectorMessage &message) = 0;
+
+    /**
+     * Gets the internal version of the worker.
+     * @return
+     */
+    [[nodiscard]] virtual size_t get_version() const = 0;
+
+     /**
+      * Sets the internal version the max of the old value and the parameter version. Else does nothing. The internal
+      * version affects things like loop detectors etc that will be reset. Each version increase corresponds to a global
+      * restart.
+      * @param version The new lower limit for the internal version.
+      * @return True if the internal version increased, false otherwise.
+      */
+    virtual bool set_version(size_t version) = 0;
 
     /**
      * Tells a CooperativeCrowdWorker to stop any work. This will mean that
@@ -98,9 +121,11 @@ public:
     ~CooperativeCrowdWorker() override = default;
 };
 
-std::unique_ptr<SingleThreadedCrowdWorker> create_crowd_worker(std::shared_ptr<HtnInstance> htn);
+std::unique_ptr<SingleThreadedCrowdWorker>
+create_crowd_worker(std::shared_ptr<HtnInstance> htn, SearchAlgorithm algorithm, LoopDetectionMode mode, size_t seed);
 
 std::unique_ptr<CooperativeCrowdWorker>
-create_cooperative_worker(std::shared_ptr<HtnInstance> htn, bool is_root);
+create_cooperative_worker(std::shared_ptr<HtnInstance> htn, size_t seed, SearchAlgorithm algorithm,
+                          LoopDetectionMode mode, bool is_root);
 
 #endif //CROWDHTN_CROWD_WORKER_HPP

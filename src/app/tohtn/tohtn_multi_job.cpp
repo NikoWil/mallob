@@ -6,7 +6,7 @@
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
 
-TohtnMultiJob::TohtnMultiJob(const Parameters& params, const JobSetup& setup) : Job(params, setup) {}
+TohtnMultiJob::TohtnMultiJob(const Parameters &params, const JobSetup &setup) : Job(params, setup) {}
 
 void TohtnMultiJob::init_job() {
     {
@@ -30,7 +30,7 @@ void TohtnMultiJob::init_job() {
         _problem_file_name = problem_file_name.str();
     }
 
-    const auto[domain, problem] = extract_files(getDescription());
+    const auto[seed, domain, problem] = extract_files(getDescription());
 
     std::ofstream domain_file{_domain_file_name};
     domain_file << domain;
@@ -41,11 +41,10 @@ void TohtnMultiJob::init_job() {
     problem_file.close();
 
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
-    LOG(V2_INFO, "HtnInstance created\n");
+    _worker = create_cooperative_worker(_htn, seed, SearchAlgorithm::DFS, LoopDetectionMode::NONE,
+                                        getJobTree().isRoot());
 
-    LOG(V2_INFO, "Worker is root: %s\n", getJobTree().isRoot() ? "true" : "false");
-    _worker = create_cooperative_worker(_htn, getJobTree().isRoot());
-    LOG(V2_INFO, "Worker created\n");
+    _last_aggregation_start = Timer::elapsedSeconds();
 }
 
 void TohtnMultiJob::appl_start() {
@@ -191,6 +190,16 @@ void TohtnMultiJob::appl_communicate() {
     std::vector<OutWorkerMessage> worker_messages{};
     {
         std::unique_lock worker_lock{_worker_mutex};
+        if (!_worker) {
+            return;
+        }
+
+        // Communicate the loop detection data
+        if (getJobTree().isRoot() && _reduction_state == ReductionState::INACTIVE &&
+            !_loop_detection_reduction.has_value()) {
+            _loop_detection_reduction = JobTreeAllReduction{}
+        }
+
         worker_messages = _worker->get_messages(getJobComm().getRanklist());
     }
 
@@ -207,7 +216,7 @@ void TohtnMultiJob::appl_communicate() {
     }
 }
 
-void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage& msg) {
+void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     InWorkerMessage worker_msg;
     worker_msg.tag = msg.tag;
     worker_msg.source = source;

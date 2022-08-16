@@ -5,12 +5,20 @@
 #include "tohtn_utils.hpp"
 #include "util/logger.hpp"
 
-std::pair<std::string, std::string> extract_files(const JobDescription &description) {
+TohtnJobInfo extract_files(const JobDescription &description) {
+
     const int revision{description.getRevision()};
     const std::size_t payload_size{description.getFormulaPayloadSize(revision)};
     const int *payload{description.getFormulaPayload(revision)};
-    const int num_domain_chars{payload[payload_size - 2]};
-    const int num_problem_chars{payload[payload_size - 1]};
+
+    // extract seed
+    static_assert(sizeof(size_t) % sizeof(int) == 0);
+    constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
+    size_t seed{};
+    memcpy(&seed, payload + payload_size - ints_in_size_t, ints_in_size_t);
+
+    const int num_domain_chars{payload[payload_size - 2 - ints_in_size_t]};
+    const int num_problem_chars{payload[payload_size - 1 - ints_in_size_t]};
 
     const int *domain_payload{payload};
     const int *problem_payload{payload + num_domain_chars};
@@ -24,5 +32,5 @@ std::pair<std::string, std::string> extract_files(const JobDescription &descript
         problem.push_back(static_cast<char>(problem_payload[i]));
     }
 
-    return {domain, problem};
+    return {seed, domain, problem};
 }

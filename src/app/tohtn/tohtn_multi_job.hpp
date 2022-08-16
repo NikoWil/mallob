@@ -8,6 +8,7 @@
 
 #include "app/job.hpp"
 #include "crowd/crowd_worker.hpp"
+#include "comm/job_tree_all_reduction.hpp"
 
 class TohtnMultiJob : public Job {
 public:
@@ -68,6 +69,19 @@ private:
     JobResult _result{};
     // Bool to ensure that appl_solved() returns true only once per job
     bool _returned_solved{false};
+
+    // Data to manage the communication of loop detector data
+    float _last_aggregation_start;
+    // initialize as none object, to avoid a weird initial state
+    std::optional<JobTreeAllReduction> _loop_detection_reduction{};
+    enum class ReductionState {
+        // used while no reduction is going on at all
+        INACTIVE,
+        // used while
+        ACTIVE,
+        DONE,
+    };
+    ReductionState _reduction_state{ReductionState::INACTIVE};
 
     void init_job();
 };

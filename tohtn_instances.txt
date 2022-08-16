@@ -1,0 +1,5 @@
+../../instances/blocksworld/domain.hddl ../../instances/blocksworld/p01.hddl
+../../instances/blocksworld/domain.hddl ../../instances/blocksworld/p02.hddl
+../../instances/blocksworld/domain.hddl ../../instances/blocksworld/p03.hddl
+../../instances/blocksworld/domain.hddl ../../instances/blocksworld/p04.hddl
+../../instances/blocksworld/domain.hddl ../../instances/blocksworld/p05.hddl

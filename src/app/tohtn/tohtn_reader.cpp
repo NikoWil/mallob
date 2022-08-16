@@ -8,6 +8,7 @@
 #include "util/sys/process.hpp"
 
 #include <fstream>
+#include <random>
 
 std::size_t read_file(const std::string &file_name, JobDescription &desc) {
     std::ifstream input{file_name};
@@ -49,6 +50,17 @@ bool TohtnReader::read(const std::vector<std::string> &files, JobDescription &de
 
     desc.addPermanentData(static_cast<int>(num_domain_chars));
     desc.addPermanentData(static_cast<int>(num_problem_chars));
+
+    const size_t seed{std::random_device{}()};
+    static_assert(sizeof(size_t) % sizeof(int) == 0);
+    constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
+    std::array<int, ints_in_size_t> seed_as_ints{};
+    memcpy(seed_as_ints.data(), &seed, sizeof(size_t));
+    for (const auto& item : seed_as_ints) {
+        desc.addPermanentData(item);
+    }
+    TODO
+    //std::for_each(seed_as_ints.crbegin(), seed_as_ints.crend(), [&desc](int item) { desc.addPermanentData(item); });
 
     desc.endInitialization();
     return true;
