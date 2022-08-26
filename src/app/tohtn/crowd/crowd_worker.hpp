@@ -72,7 +72,7 @@ public:
      * Get the data representing the state of an internal LoopDetector if it exists.
      * @return
      */
-    [[nodiscard]] virtual LoopDetectorMessage get_loop_detector_data() = 0;
+    [[nodiscard]] virtual std::vector<int> get_loop_detector_data() = 0;
 
     /**
      * Add the data encoded in message to the local LoopDetector for future checks against it. Returns true if the
@@ -83,7 +83,7 @@ public:
      * @param message The LoopDetector to be added
      * @return True if the internal version was increased as a result of the data, false otherwise.
      */
-    virtual bool add_loop_detector_data(const LoopDetectorMessage &message) = 0;
+    virtual bool add_loop_detector_data(std::vector<int> &message) = 0;
 
     /**
      * Gets the internal version of the worker.

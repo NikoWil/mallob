@@ -34,14 +34,8 @@ struct OutWorkerMessage {
     std::vector<int> data;
 };
 
-struct LoopDetectorMessage {
-    size_t version;
-    size_t num_nodes;
-    // The number of bytes in data which are significant
-    size_t num_bytes;
-    std::vector<int> data;
-};
+[[nodiscard]] std::vector<int> combine_encoded_messages(std::vector<int> &lhs, std::vector<int> &rhs);
 
-[[nodiscard]] LoopDetectorMessage combine_messages(const LoopDetectorMessage& lhs, const LoopDetectorMessage& rhs);
+[[nodiscard]] std::vector<int> empty_loopdetector_message();
 
 #endif //CROWDHTN_WORKER_TYPES_HPP

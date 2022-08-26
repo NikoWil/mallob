@@ -3,6 +3,7 @@
 //
 
 #include <fstream>
+#include "tohtn_msg_tags.hpp"
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
 
@@ -12,7 +13,6 @@ void TohtnMultiJob::init_job() {
     {
         // Create filenames for domain and problem, unique to each worker
         // Uniqueness of filename is important in the case where the workers run on the same machine
-
         std::stringstream id_stream;
         id_stream << "job-" << std::to_string(getDescription().getId()) << "_";
         id_stream << "rank-" << std::to_string(getJobTree().getIndex());
@@ -187,29 +187,21 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
+    _reduction_comm.update(getJobTree(), getDescription().getId(), getRevision());
     std::vector<OutWorkerMessage> worker_messages{};
     {
         std::unique_lock worker_lock{_worker_mutex};
         if (!_worker) {
             return;
         }
-
-        // Communicate the loop detection data
-        if (getJobTree().isRoot() && _reduction_state == ReductionState::INACTIVE &&
-            !_loop_detection_reduction.has_value()) {
-            _loop_detection_reduction = JobTreeAllReduction{}
-        }
-
         worker_messages = _worker->get_messages(getJobComm().getRanklist());
     }
-
     for (auto &msg: worker_messages) {
         JobMessage job_msg;
         job_msg.jobId = getId();
         job_msg.revision = getRevision();
         job_msg.tag = msg.tag;
         // job_msg.epoch and job_msg.checksum can be ignored so far.
-        // TODO: integrate job_msg.epoch once restarts due do loop detection are in use!
         job_msg.payload = std::move(msg.data);
 
         MyMpi::isend(msg.dest, MSG_SEND_APPLICATION_MESSAGE, job_msg);
@@ -217,16 +209,23 @@ void TohtnMultiJob::appl_communicate() {
 }
 
 void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
-    InWorkerMessage worker_msg;
-    worker_msg.tag = msg.tag;
-    worker_msg.source = source;
-    worker_msg.data = std::move(msg.payload);
-
-    std::unique_lock worker_lock{_worker_mutex};
-    if (msg.returnedToSender) {
-        _worker->return_message(worker_msg);
+    if (mpiTag == MSG_JOB_TREE_REDUCTION || mpiTag == MSG_JOB_TREE_BROADCAST ||
+        msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE || msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_DATA) {
+        _reduction_comm.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getDescription().getId(),
+                                        getDescription(), _worker_mutex, *_worker);
+        return;
     } else {
-        _worker->add_message(worker_msg);
+        InWorkerMessage worker_msg;
+        worker_msg.tag = msg.tag;
+        worker_msg.source = source;
+        worker_msg.data = std::move(msg.payload);
+
+        std::unique_lock worker_lock{_worker_mutex};
+        if (msg.returnedToSender) {
+            _worker->return_message(worker_msg);
+        } else {
+            _worker->add_message(worker_msg);
+        }
     }
 }
 
