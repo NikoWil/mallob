@@ -187,13 +187,39 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
-    _reduction_comm.update(getJobTree(), getDescription().getId(), getRevision());
+    auto potential_data{_reduction_comm.update(getJobTree(), getDescription().getId(), getRevision())};
+
     std::vector<OutWorkerMessage> worker_messages{};
     {
         std::unique_lock worker_lock{_worker_mutex};
         if (!_worker) {
             return;
         }
+
+        if (potential_data.has_value()) {
+            const auto version_increased{_worker->add_loop_detector_data(potential_data.value())};
+            if (getJobTree().isRoot() && version_increased) {
+                JobMessage version_msg;
+                version_msg.jobId = getId();
+                version_msg.revision = getRevision();
+                version_msg.tag = MPI_TAGS::WORKER_VERSION_BCAST;
+
+                static_assert(sizeof(size_t) % sizeof(int) == 0);
+                constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
+                std::vector<int> payload(ints_in_size_t);
+                const size_t version{_worker->get_version()};
+                memcpy(payload.data(), &version, sizeof(size_t));
+                version_msg.payload = payload;
+
+                if (getJobTree().hasLeftChild()) {
+                    MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, version_msg);
+                }
+                if (getJobTree().hasRightChild()) {
+                    MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, version_msg);
+                }
+            }
+        }
+
         worker_messages = _worker->get_messages(getJobComm().getRanklist());
     }
     for (auto &msg: worker_messages) {
@@ -214,6 +240,23 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
         _reduction_comm.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getDescription().getId(),
                                         getDescription(), _worker_mutex, *_worker);
         return;
+    } else if (msg.tag == MPI_TAGS::WORKER_VERSION_BCAST) {
+        // do the broadcasting
+        if (getJobTree().hasLeftChild()) {
+            MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
+        }
+        if (getJobTree().hasRightChild()) {
+            MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
+        }
+
+        // update the version
+        static_assert(sizeof(size_t) % sizeof(int) == 0);
+        constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
+        size_t version;
+        memcpy(&version, msg.payload.data(), sizeof(size_t));
+
+        std::unique_lock worker_lock{_worker_mutex};
+        _worker->set_version(version);
     } else {
         InWorkerMessage worker_msg;
         worker_msg.tag = msg.tag;

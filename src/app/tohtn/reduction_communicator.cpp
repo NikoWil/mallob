@@ -51,6 +51,7 @@ void ReductionCommunicator::update_inactive(JobTree &job_tree, int job_id, int r
             {
                 // Send message to self to use the common init code
                 _last_aggregation_start = Timer::elapsedSeconds();
+
                 JobMessage init_msg{};
                 init_msg.jobId = job_id;
                 init_msg.revision = revision;
