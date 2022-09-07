@@ -51,16 +51,31 @@ bool TohtnReader::read(const std::vector<std::string> &files, JobDescription &de
     desc.addPermanentData(static_cast<int>(num_domain_chars));
     desc.addPermanentData(static_cast<int>(num_problem_chars));
 
-    const size_t seed{std::random_device{}()};
+    // Create seeds that use all bytes in a size_t!
+    const auto create_seed = [](std::random_device& device) {
+        static_assert(sizeof(size_t) % sizeof(unsigned int) == 0);
+        size_t seed{0};
+        constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
+        for (size_t idx{0}; idx < ints_in_size_t; ++idx) {
+            size_t seed_part{device()};
+            seed_part = seed_part << (idx * sizeof(int) * 8);
+            seed |= seed_part;
+        }
+        return seed;
+    };
+
     static_assert(sizeof(size_t) % sizeof(int) == 0);
     constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
-    std::array<int, ints_in_size_t> seed_as_ints{};
-    memcpy(seed_as_ints.data(), &seed, sizeof(size_t));
-    for (const auto& item : seed_as_ints) {
+
+    std::random_device device{};
+    std::array<size_t, 4> seeds{create_seed(device), create_seed(device), create_seed(device), create_seed(device)};
+
+    std::array<int, 4 * ints_in_size_t> seeds_as_ints{};
+    memcpy(seeds_as_ints.data(), seeds.data(), sizeof(size_t) * 4);
+
+    for (const auto& item : seeds_as_ints) {
         desc.addPermanentData(item);
     }
-    TODO
-    //std::for_each(seed_as_ints.crbegin(), seed_as_ints.crend(), [&desc](int item) { desc.addPermanentData(item); });
 
     desc.endInitialization();
     return true;

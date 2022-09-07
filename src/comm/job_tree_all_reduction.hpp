@@ -187,5 +187,4 @@ private:
         if (_expected_child_ranks.second >= 0) 
             MyMpi::isend(_expected_child_ranks.second, MSG_JOB_TREE_BROADCAST, _base_msg);
     }
-
 };

@@ -122,10 +122,10 @@ public:
 };
 
 std::unique_ptr<SingleThreadedCrowdWorker>
-create_crowd_worker(std::shared_ptr<HtnInstance> htn, SearchAlgorithm algorithm, LoopDetectionMode mode, size_t seed);
+create_crowd_worker(std::shared_ptr<HtnInstance> htn, SearchAlgorithm algorithm, LoopDetectionMode mode, const std::array<size_t, 4> &seeds);
 
 std::unique_ptr<CooperativeCrowdWorker>
-create_cooperative_worker(std::shared_ptr<HtnInstance> htn, size_t seed, SearchAlgorithm algorithm,
+create_cooperative_worker(std::shared_ptr<HtnInstance> htn, const std::array<size_t, 4> &seeds, SearchAlgorithm algorithm,
                           LoopDetectionMode mode, bool is_root);
 
 #endif //CROWDHTN_CROWD_WORKER_HPP

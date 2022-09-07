@@ -14,11 +14,11 @@ TohtnJobInfo extract_files(const JobDescription &description) {
     // extract seed
     static_assert(sizeof(size_t) % sizeof(int) == 0);
     constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
-    size_t seed{};
-    memcpy(&seed, payload + payload_size - ints_in_size_t, ints_in_size_t);
+    std::array<size_t, 4> seeds{};
+    memcpy(seeds.data(), payload + payload_size - 4 * ints_in_size_t, 4 * sizeof(size_t));
 
-    const int num_domain_chars{payload[payload_size - 2 - ints_in_size_t]};
-    const int num_problem_chars{payload[payload_size - 1 - ints_in_size_t]};
+    const int num_domain_chars{payload[payload_size - 2 - (4 * ints_in_size_t)]};
+    const int num_problem_chars{payload[payload_size - 1 - (4 * ints_in_size_t)]};
 
     const int *domain_payload{payload};
     const int *problem_payload{payload + num_domain_chars};
@@ -32,5 +32,5 @@ TohtnJobInfo extract_files(const JobDescription &description) {
         problem.push_back(static_cast<char>(problem_payload[i]));
     }
 
-    return {seed, domain, problem};
+    return {seeds, domain, problem};
 }

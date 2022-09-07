@@ -34,7 +34,7 @@ struct OutWorkerMessage {
     std::vector<int> data;
 };
 
-[[nodiscard]] std::vector<int> combine_encoded_messages(std::vector<int> &lhs, std::vector<int> &rhs);
+[[nodiscard]] std::vector<int> combine_encoded_messages(std::vector<int> lhs, std::vector<int> rhs);
 
 [[nodiscard]] std::vector<int> empty_loopdetector_message();
 

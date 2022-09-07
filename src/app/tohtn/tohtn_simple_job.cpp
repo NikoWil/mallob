@@ -33,7 +33,7 @@ void TohtnSimpleJob::appl_start() {
         _problem_file_name = problem_file_name.str();
     }
 
-    const auto[seed, domain, problem] = extract_files(getDescription());
+    const auto[seeds, domain, problem] = extract_files(getDescription());
 
     std::ofstream domain_file{_domain_file_name};
     domain_file << domain;
@@ -46,7 +46,7 @@ void TohtnSimpleJob::appl_start() {
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
     LOG(V2_INFO, "HtnInstance created\n");
 
-    _worker = create_crowd_worker(_htn, SearchAlgorithm::DFS, LoopDetectionMode::NONE, seed);
+    _worker = create_crowd_worker(_htn, SearchAlgorithm::DFS, LoopDetectionMode::NONE, seeds);
     LOG(V2_INFO, "Worker created\n");
 
     _work_thread = std::thread{[this]() {

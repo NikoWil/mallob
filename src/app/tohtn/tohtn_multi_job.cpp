@@ -30,7 +30,7 @@ void TohtnMultiJob::init_job() {
         _problem_file_name = problem_file_name.str();
     }
 
-    const auto[seed, domain, problem] = extract_files(getDescription());
+    const auto[seeds, domain, problem] = extract_files(getDescription());
 
     std::ofstream domain_file{_domain_file_name};
     domain_file << domain;
@@ -41,10 +41,8 @@ void TohtnMultiJob::init_job() {
     problem_file.close();
 
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
-    _worker = create_cooperative_worker(_htn, seed, SearchAlgorithm::DFS, LoopDetectionMode::NONE,
+    _worker = create_cooperative_worker(_htn, seeds, SearchAlgorithm::DFS, LoopDetectionMode::GLOBAL_BLOOM,
                                         getJobTree().isRoot());
-
-    _last_aggregation_start = Timer::elapsedSeconds();
 }
 
 void TohtnMultiJob::appl_start() {
@@ -145,8 +143,8 @@ int TohtnMultiJob::appl_solved() {
 }
 
 JobResult &&TohtnMultiJob::appl_getResult() {
-    LOG(V2_INFO, "TohtnSimpleJob::appl_getResult()\n");
-    std::optional<std::string> plan_opt;
+    LOG(V2_INFO, "TohtnMultiJob::appl_getResult()\n");
+    std::optional<std::string> plan_opt{};
     {
         std::unique_lock worker_lock{_worker_mutex};
         if (_worker) {
@@ -187,7 +185,10 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
-    auto potential_data{_reduction_comm.update(getJobTree(), getDescription().getId(), getRevision())};
+    std::optional<std::vector<int>> potential_data{};
+    if (hasDescription()) {
+        potential_data = _reduction_comm.update(getJobTree(), getDescription().getId(), getRevision());
+    }
 
     std::vector<OutWorkerMessage> worker_messages{};
     {
@@ -237,8 +238,15 @@ void TohtnMultiJob::appl_communicate() {
 void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     if (mpiTag == MSG_JOB_TREE_REDUCTION || mpiTag == MSG_JOB_TREE_BROADCAST ||
         msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE || msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_DATA) {
-        _reduction_comm.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getDescription().getId(),
-                                        getDescription(), _worker_mutex, *_worker);
+        if (hasDescription()) {
+            _reduction_comm.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getDescription().getId(),
+                                            getDescription(), _worker_mutex, *_worker);
+        }
+
+        if (!hasDescription() && msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE) {
+            msg.returnedToSender = true;
+            MyMpi::isend(source, mpiTag, msg);
+        }
         return;
     } else if (msg.tag == MPI_TAGS::WORKER_VERSION_BCAST) {
         // do the broadcasting
@@ -249,14 +257,13 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
             MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
         }
 
-        // update the version
-        static_assert(sizeof(size_t) % sizeof(int) == 0);
-        constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
         size_t version;
         memcpy(&version, msg.payload.data(), sizeof(size_t));
 
         std::unique_lock worker_lock{_worker_mutex};
-        _worker->set_version(version);
+        if (_worker) {
+            _worker->set_version(version);
+        }
     } else {
         InWorkerMessage worker_msg;
         worker_msg.tag = msg.tag;

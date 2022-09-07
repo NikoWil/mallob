@@ -10,7 +10,8 @@ JobMessage get_loop_detection_base_message(const JobDescription &desc) {
 }
 
 ReductionCommunicator::ReductionCommunicator()
-        : _reduction{}, _last_aggregation_start{Timer::elapsedSeconds()}, _reduction_state{ReductionState::INACTIVE} {
+        : _reduction{}, _last_aggregation_start{Timer::elapsedSeconds()}, _reduction_state{ReductionState::INACTIVE},
+          _postponed_messages{} {
 }
 
 std::optional<std::vector<int>>
@@ -39,7 +40,7 @@ void ReductionCommunicator::receive_message(int source, int mpi_tag, JobMessage 
             receive_active(source, mpi_tag, msg, description);
             break;
         case ReductionState::DONE:
-            receive_done(msg, job_tree, revision, job_id, description, worker_mutex, worker);
+            receive_done(source, mpi_tag, msg, job_tree, revision, job_id, description, worker_mutex, worker);
             break;
     }
 }
@@ -99,12 +100,18 @@ void
 ReductionCommunicator::receive_active(int source, int mpi_tag, JobMessage &msg, const JobDescription &description) {
     if (msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_DATA) {
         _reduction->receive(source, mpi_tag, msg);
-    } else if (msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE && msg.returnedToSender) {
-        // A child died before they could send us loop detector data. Just pretend it sent back an empty message
-        // to make the JobTreeAllReduction happy (i.e, pretend all children replied)
-        JobMessage fake_msg{get_loop_detection_base_message(description)};
-        fake_msg.payload = empty_loopdetector_message();
-        _reduction->receive(source, MSG_JOB_TREE_REDUCTION, fake_msg);
+    } else if (msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE) {
+        if (msg.returnedToSender) {
+            // A child died before they could send us loop detector data. Just pretend it sent back an empty message
+            // to make the JobTreeAllReduction happy (i.e, pretend all children replied)
+            JobMessage fake_msg{get_loop_detection_base_message(description)};
+            fake_msg.payload = empty_loopdetector_message();
+            _reduction->receive(source, MSG_JOB_TREE_REDUCTION, fake_msg);
+        } else {
+            // Some parent already hastily started the next reduction. We did not hear that at all
+            msg.returnedToSender = true;
+            MyMpi::isend(source, mpi_tag, msg);
+        }
     }
 }
 
@@ -114,18 +121,24 @@ ReductionCommunicator::receive_active(int source, int mpi_tag, JobMessage &msg, 
  * @param msg
  * @return
  */
-void ReductionCommunicator::receive_done(JobMessage &msg, JobTree &job_tree, int revision, int job_id,
-                                         const JobDescription &description, std::mutex &worker_mutex,
+void ReductionCommunicator::receive_done(int source, int mpi_tag, JobMessage &msg, JobTree &job_tree, int revision,
+                                         int job_id, const JobDescription &description, std::mutex &worker_mutex,
                                          CooperativeCrowdWorker &worker) {
     assert(msg.tag != MPI_TAGS::LOOP_DETECTION_REDUCTION_DATA);
 
-    // Skip the inactive stage
-    if (msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE) {
-        // may lead to a more expensive destruction
-        // Should be unlikely to impossible (as we always use the result), but is done as I rather code defensively
-        // than try to prove the properties of a parallel state machine (and future code changes etc.)
-        init_reduction(job_tree, revision, job_id, description, worker_mutex, worker);
-        _reduction_state = ReductionState::ACTIVE;
+    if (_reduction->isDestructible()) {
+        _reduction = {};
+        _reduction_state = ReductionState::INACTIVE;
+        receive_inactive(msg, job_tree, revision, job_id, description, worker_mutex, worker);
+        return;
+    }
+
+    // Should we receive a new message before the whole thing is over internally, the message can logically only be
+    // a LOOP_DETECTION_REDUCTION_ANNOUNCE
+    // In this case simply return to sender as if we do not exist and ignore that revision
+    if (msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE || msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_DATA) {
+        msg.returnedToSender = true;
+        MyMpi::isend(source, mpi_tag, msg);
     }
 }
 

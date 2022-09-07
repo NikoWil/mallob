@@ -41,6 +41,13 @@ private:
     };
     ReductionState _reduction_state;
 
+    struct PostponedMessage {
+        int source;
+        int mpi_tag;
+        JobMessage msg;
+    };
+    std::vector<PostponedMessage> _postponed_messages;
+
     void update_inactive(JobTree &job_tree, int job_id, int revision);
 
     std::optional<std::vector<int>> update_active();
@@ -52,7 +59,7 @@ private:
 
     void receive_active(int source, int mpi_tag, JobMessage &msg, const JobDescription &description);
 
-    void receive_done(JobMessage &msg, JobTree &job_tree, int revision, int job_id,
+    void receive_done(int source, int mpi_tag, JobMessage &msg, JobTree &job_tree, int revision, int job_id,
                       const JobDescription &description, std::mutex &worker_mutex, CooperativeCrowdWorker &worker);
 
     /**

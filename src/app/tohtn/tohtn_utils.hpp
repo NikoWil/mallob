@@ -11,7 +11,7 @@
 #include <utility>
 
 struct TohtnJobInfo {
-    size_t seed;
+    std::array<size_t, 4> seed;
     std::string domain;
     std::string problem;
 };
