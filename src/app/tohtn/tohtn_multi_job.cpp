@@ -3,7 +3,6 @@
 //
 
 #include <fstream>
-#include "tohtn_msg_tags.hpp"
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
 
@@ -185,42 +184,12 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
-    std::optional<std::vector<int>> potential_data{};
-    if (hasDescription()) {
-        potential_data = _reduction_comm.update(getJobTree(), getDescription().getId(), getRevision());
-    }
-
     std::vector<OutWorkerMessage> worker_messages{};
     {
         std::unique_lock worker_lock{_worker_mutex};
         if (!_worker) {
             return;
         }
-
-        if (potential_data.has_value()) {
-            const auto version_increased{_worker->add_loop_detector_data(potential_data.value())};
-            if (getJobTree().isRoot() && version_increased) {
-                JobMessage version_msg;
-                version_msg.jobId = getId();
-                version_msg.revision = getRevision();
-                version_msg.tag = MPI_TAGS::WORKER_VERSION_BCAST;
-
-                static_assert(sizeof(size_t) % sizeof(int) == 0);
-                constexpr size_t ints_in_size_t{sizeof(size_t) / sizeof(int)};
-                std::vector<int> payload(ints_in_size_t);
-                const size_t version{_worker->get_version()};
-                memcpy(payload.data(), &version, sizeof(size_t));
-                version_msg.payload = payload;
-
-                if (getJobTree().hasLeftChild()) {
-                    MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, version_msg);
-                }
-                if (getJobTree().hasRightChild()) {
-                    MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, version_msg);
-                }
-            }
-        }
-
         worker_messages = _worker->get_messages(getJobComm().getRanklist());
     }
     for (auto &msg: worker_messages) {
@@ -236,46 +205,16 @@ void TohtnMultiJob::appl_communicate() {
 }
 
 void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
-    if (mpiTag == MSG_JOB_TREE_REDUCTION || mpiTag == MSG_JOB_TREE_BROADCAST ||
-        msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE || msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_DATA) {
-        if (hasDescription()) {
-            _reduction_comm.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getDescription().getId(),
-                                            getDescription(), _worker_mutex, *_worker);
-        }
+    InWorkerMessage worker_msg;
+    worker_msg.tag = msg.tag;
+    worker_msg.source = source;
+    worker_msg.data = std::move(msg.payload);
 
-        if (!hasDescription() && msg.tag == MPI_TAGS::LOOP_DETECTION_REDUCTION_ANNOUNCE) {
-            msg.returnedToSender = true;
-            MyMpi::isend(source, mpiTag, msg);
-        }
-        return;
-    } else if (msg.tag == MPI_TAGS::WORKER_VERSION_BCAST) {
-        // do the broadcasting
-        if (getJobTree().hasLeftChild()) {
-            MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
-        }
-        if (getJobTree().hasRightChild()) {
-            MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
-        }
-
-        size_t version;
-        memcpy(&version, msg.payload.data(), sizeof(size_t));
-
-        std::unique_lock worker_lock{_worker_mutex};
-        if (_worker) {
-            _worker->set_version(version);
-        }
+    std::unique_lock worker_lock{_worker_mutex};
+    if (msg.returnedToSender) {
+        _worker->return_message(worker_msg);
     } else {
-        InWorkerMessage worker_msg;
-        worker_msg.tag = msg.tag;
-        worker_msg.source = source;
-        worker_msg.data = std::move(msg.payload);
-
-        std::unique_lock worker_lock{_worker_mutex};
-        if (msg.returnedToSender) {
-            _worker->return_message(worker_msg);
-        } else {
-            _worker->add_message(worker_msg);
-        }
+        _worker->add_message(worker_msg);
     }
 }
 
