@@ -8,7 +8,6 @@
 
 #include "app/job.hpp"
 #include "crowd/crowd_worker.hpp"
-#include "reduction_communicator.hpp"
 
 class TohtnMultiJob : public Job {
 public:
@@ -69,8 +68,6 @@ private:
     JobResult _result{};
     // Bool to ensure that appl_solved() returns true only once per job
     bool _returned_solved{false};
-
-    ReductionCommunicator _reduction_comm{};
 
     void init_job();
 };
