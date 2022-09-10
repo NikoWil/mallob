@@ -41,6 +41,7 @@ void TohtnMultiJob::init_job() {
     problem_file.close();
 
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
+    std::unique_lock worker_lock{_worker_mutex};
     _worker = create_cooperative_worker(_htn, seeds, SearchAlgorithm::DFS, LoopDetectionMode::GLOBAL_BLOOM,
                                         getJobTree().isRoot());
 }
@@ -286,7 +287,7 @@ void TohtnMultiJob::appl_dumpStats() {
 bool TohtnMultiJob::appl_isDestructible() {
     std::unique_lock worker_lock{_worker_mutex};
     std::unique_lock has_terminated_lock{_has_terminated_mutex};
-    return _work_thread.joinable() && _has_terminated && _worker->is_destructible();
+    return _work_thread.joinable() && _has_terminated && _worker && _worker->is_destructible();
 }
 
 void TohtnMultiJob::appl_memoryPanic() {
