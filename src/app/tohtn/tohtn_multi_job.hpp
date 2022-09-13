@@ -47,22 +47,37 @@ private:
     std::unique_ptr<CooperativeCrowdWorker> _worker{};
     std::thread _work_thread{};
 
-    bool _suspend_flag{false};
-    std::mutex _suspend_mutex{};
+    std::atomic<bool> _has_plan{false};
+    std::string _plan{};
+
+    float _last_log_time{0.};
+
+    //bool _suspend_flag{false};
+    //std::mutex _suspend_mutex{};
+    //std::condition_variable _suspend_cvar{};
+    std::atomic<bool> _should_suspend{false};
     std::condition_variable _suspend_cvar{};
 
-    std::mutex _worker_mutex{};
+    //std::mutex _worker_mutex{};
+    std::mutex _out_msg_mutex{};
+    std::vector<OutWorkerMessage> _out_msgs{};
+    std::mutex _in_msg_mutex{};
+    std::vector<InWorkerMessage> _in_msgs{};
+    std::mutex _return_msg_mutex{};
+    std::vector<InWorkerMessage> _return_msgs{};
 
     // Flag & mutex to signal the _work_thread when it should abort planning and terminate
-    bool _termiante_flag{false};
-    std::mutex _terminate_mutex{};
+    //bool _termiante_flag{false};
+    //std::mutex _terminate_mutex{};
+    std::atomic<bool> _should_terminate{false};
 
     // Flag to show that termination request hast been received
     // isDestructible only returns true once this flag is true as it guarantees that the thread will join fast and can
     // thus be joined without violating the mallob preconditions (i.e. the thread has seen the set _termiante_flag and
     // is not currently in a long planning episode)
-    bool _has_terminated{false};
-    std::mutex _has_terminated_mutex{};
+    //bool _has_terminated{false};
+    //std::mutex _has_terminated_mutex{};
+    std::atomic<bool> _did_terminate{false};
 
     // Only exists as appl_getResult returns a reference and we need the JobResult to survive beyond the function call
     JobResult _result{};

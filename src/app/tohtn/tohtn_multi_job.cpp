@@ -40,9 +40,11 @@ void TohtnMultiJob::init_job() {
     problem_file.close();
 
     _htn = get_htn_instance(_domain_file_name, _problem_file_name);
-    std::unique_lock worker_lock{_worker_mutex};
+
     _worker = create_cooperative_worker(_htn, seeds, SearchAlgorithm::DFS, LoopDetectionMode::GLOBAL_BLOOM,
                                         getJobTree().isRoot());
+
+    _last_log_time = Timer::elapsedSeconds();
 }
 
 void TohtnMultiJob::appl_start() {
@@ -51,34 +53,65 @@ void TohtnMultiJob::appl_start() {
     _work_thread = std::thread{[this]() {
 
         while (true) {
-            // The three sections are in different blocks to make it clear to the compiler that mutexes can be released
-            // again
-
-            // acquire mutex for working & wait flag
-            // Suspend via condition variable, if it's needed
-            {
-                std::unique_lock suspend_lock{_suspend_mutex};
-                if (_suspend_flag) {
-                    // re-check _suspend_flag to deal with spurious wakeups
-                    _suspend_cvar.wait(suspend_lock, [this]() { return !_suspend_flag; });
-                }
+            if (Timer::elapsedSeconds() - _last_log_time >= 1.f) {
+                _last_log_time = Timer::elapsedSeconds();
+                LOG(V2_INFO, "Has work: %s, has plan: %s\n", _worker->has_work() ? "true" : "false", _has_plan.load() ? "true" : "false");
             }
 
+            if (_worker->plan_step() == WorkerPlanState::PLAN) {
+                _has_plan.store(true);
+                auto plan_opt{_worker->get_plan_string()};
+                assert(plan_opt.has_value());
+                _plan = std::string{plan_opt.value()};
+                return;
+            }
+
+            // The three sections are in different blocks to make it clear to the compiler that mutexes can be released
+            // again
+            std::vector<InWorkerMessage> new_in_msgs{};
             {
-                std::unique_lock worker_lock{_worker_mutex};
-                if (_worker->plan_step() == WorkerPlanState::PLAN) {
-                    return;
-                }
+                std::unique_lock in_msg_lock{_in_msg_mutex};
+                std::swap(_in_msgs, new_in_msgs);
+            }
+            if (!new_in_msgs.empty()) {
+                LOG(V2_INFO, "Receiving %zu messages\n", new_in_msgs.size());
+            }
+            for (auto& in_msg : new_in_msgs) {
+                _worker->add_message(in_msg);
+            }
+
+            std::vector<InWorkerMessage> new_return_msgs{};
+            {
+                std::unique_lock return_msg_lock{_return_msg_mutex};
+                std::swap(_return_msgs, new_return_msgs);
+            }
+            for (auto& return_msg : new_return_msgs) {
+                _worker->return_message(return_msg);
+            }
+
+            std::vector<OutWorkerMessage> new_out_msgs{_worker->get_messages(getJobComm().getRanklist())};
+            if (!new_out_msgs.empty()) {
+                LOG(V2_INFO, "Crowd sending %zu messages\n", new_out_msgs.size());
+            }
+            {
+                std::unique_lock out_msg_lock{_out_msg_mutex};
+                _out_msgs.insert(_out_msgs.end(), new_out_msgs.begin(), new_out_msgs.end());
+            }
+
+            // suspension and termination are checked after the plan step and messages are handled
+            // i.e., all messages from crowd's side are handled once we reach this point
+            // this assures us that we are kinda fine
+
+            if (_should_suspend.load()) {
+                std::mutex token_mutex{};
+                std::unique_lock token_lock{token_mutex};
+                _suspend_cvar.wait(token_lock, [this]() -> bool { return !_should_suspend.load(); });
             }
 
             // check for termination
-            {
-                std::unique_lock terminate_lock{_terminate_mutex};
-                if (_termiante_flag) {
-                    std::unique_lock has_terminated_lock{_has_terminated_mutex};
-                    _has_terminated = true;
-                    return;
-                }
+            if (_should_terminate.load()) {
+                _did_terminate.store(true);
+                return;
             }
         }
     }};
@@ -86,86 +119,55 @@ void TohtnMultiJob::appl_start() {
 }
 
 void TohtnMultiJob::appl_suspend() {
-    {
-        // don't suspend if the thread is already busy terminating!
-        std::unique_lock terminate_lock{_terminate_mutex};
-        if (_termiante_flag) {
-            return;
-        }
+    if (_should_terminate.load()) {
+        return;
     }
-    {
-        // suspend thread
-        std::unique_lock suspend_lock{_suspend_mutex};
-        _suspend_flag = true;
-    }
+    // get rid of any leftover messages!
+    this->communicate();
+    _should_suspend.store(true);
 }
 
 void TohtnMultiJob::appl_resume() {
     // resume thread
-    {
-        std::unique_lock suspend_lock{_suspend_mutex};
-        _suspend_flag = false;
-    }
+    _should_suspend.store(false);
+
     // Cppreference says that holding the lock while calling notify_all is a pessimization
     // https://en.cppreference.com/w/cpp/thread/condition_variable/notify_all
     _suspend_cvar.notify_all();
 }
 
 void TohtnMultiJob::appl_terminate() {
-    // Separate flag such that the lock gets destroyed, the _worker_thread can actually read the _terminate_flag and
-    // then terminate accordingly
-    {
-        std::unique_lock terminate_lock{_terminate_mutex};
-        _termiante_flag = true;
-    }
+    _should_terminate.store(true);
+    // get rid of any leftover messages!
+    this->communicate();
+
     // only a resumed job will actually see the _terminate_flag and act accordingly
     appl_resume();
 }
 
 int TohtnMultiJob::appl_solved() {
-    std::unique_lock worker_lock{_worker_mutex};
-    if (_worker) {
-        // Only return 1 once
-        if (_returned_solved) {
-            return -1;
-        }
-        _returned_solved = _worker->has_plan();
-
-        if (_worker->has_plan()) {
-            LOG(V2_INFO, "appl_solved reports _worker->has_plan = %s, _worker->has_work = %s\n",
-                _worker->has_plan() ? "true" : "false", _worker->has_work() ? "true" : "false");
-        }
-        return _worker->has_plan() ? 1 : -1;
+    if (_has_plan.load() && !_returned_solved) {
+        _returned_solved = true;
+        return 1;
     } else {
-        LOG(V2_INFO, "Worker %d asked whether plan exists, _worker is nullptr\n", this->getId());
         return -1;
     }
 }
 
 JobResult &&TohtnMultiJob::appl_getResult() {
     LOG(V2_INFO, "TohtnMultiJob::appl_getResult()\n");
-    std::optional<std::string> plan_opt{};
-    {
-        std::unique_lock worker_lock{_worker_mutex};
-        if (_worker) {
-            plan_opt = _worker->get_plan_string();
-        }
-    }
+
 
     _result = JobResult{};
     _result.id = this->getId();
     _result.revision = this->getRevision();
-    if (plan_opt.has_value()) {
+    if (_has_plan.load()) {
         LOG(V2_INFO, "result exists!\n");
         _result.result = 10;
 
-        const std::string plan_string{std::move(plan_opt.value())};
-
-        //LOG(V2_INFO, "Plan:\n%s\n", plan_string.c_str());
-
         std::vector<int> plan_str_as_ints;
-        plan_str_as_ints.reserve(plan_string.size());
-        for (const auto c: plan_string) {
+        plan_str_as_ints.reserve(_plan.size());
+        for (const auto c: _plan) {
             plan_str_as_ints.push_back(c);
         }
         _result.setSolutionToSerialize(plan_str_as_ints.data(), plan_str_as_ints.size());
@@ -175,9 +177,6 @@ JobResult &&TohtnMultiJob::appl_getResult() {
         std::vector<int> empty_solution{};
         _result.setSolutionToSerialize(empty_solution.data(), empty_solution.size());
         _result.setSolution(std::move(empty_solution));
-
-        // TODO: what if we are called while no plan exists? Crash the world?
-        LOG(V1_WARN, "Worker %d asked for plan while none exists (yet)!\n", getId());
     }
 
     // Don't tell me, the signature asks for it
@@ -185,15 +184,17 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
-    std::vector<OutWorkerMessage> worker_messages{};
+    std::vector<OutWorkerMessage> new_out_msgs{};
     {
-        std::unique_lock worker_lock{_worker_mutex};
-        if (!_worker) {
-            return;
-        }
-        worker_messages = _worker->get_messages(getJobComm().getRanklist());
+        std::unique_lock out_msg_lock{_out_msg_mutex};
+        std::swap(new_out_msgs, _out_msgs);
     }
-    for (auto &msg: worker_messages) {
+
+    if (!new_out_msgs.empty()) {
+        LOG(V2_INFO, "Sending %zu messages!\n", new_out_msgs.size());
+    }
+
+    for (auto &msg: new_out_msgs) {
         JobMessage job_msg;
         job_msg.jobId = getId();
         job_msg.revision = getRevision();
@@ -211,11 +212,12 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     worker_msg.source = source;
     worker_msg.data = std::move(msg.payload);
 
-    std::unique_lock worker_lock{_worker_mutex};
     if (msg.returnedToSender) {
-        _worker->return_message(worker_msg);
+        std::unique_lock return_msg_lock{_return_msg_mutex};
+        _return_msgs.push_back(std::move(worker_msg));
     } else {
-        _worker->add_message(worker_msg);
+        std::unique_lock in_msg_lock{_in_msg_mutex};
+        _in_msgs.push_back(std::move(worker_msg));
     }
 }
 
@@ -224,9 +226,8 @@ void TohtnMultiJob::appl_dumpStats() {
 }
 
 bool TohtnMultiJob::appl_isDestructible() {
-    std::unique_lock worker_lock{_worker_mutex};
-    std::unique_lock has_terminated_lock{_has_terminated_mutex};
-    return _work_thread.joinable() && _has_terminated && _worker && _worker->is_destructible();
+    // TODO: protect call to _worker->is_destructible()
+    return _work_thread.joinable() && _did_terminate.load();
 }
 
 void TohtnMultiJob::appl_memoryPanic() {
