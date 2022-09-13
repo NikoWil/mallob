@@ -13,6 +13,7 @@ download.sh
 
 .idea/
 cmake-build-debug/
+cmake-build-release/
 
 test_job.json
 test_log/

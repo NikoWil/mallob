@@ -43,22 +43,13 @@ void TohtnMultiJob::init_job() {
 
     _worker = create_cooperative_worker(_htn, seeds, SearchAlgorithm::DFS, LoopDetectionMode::GLOBAL_BLOOM,
                                         getJobTree().isRoot());
-
-    _last_log_time = Timer::elapsedSeconds();
 }
 
 void TohtnMultiJob::appl_start() {
     init_job();
 
     _work_thread = std::thread{[this]() {
-
         while (true) {
-            if (Timer::elapsedSeconds() - _last_log_time >= 1.f) {
-                _last_log_time = Timer::elapsedSeconds();
-                LOG(V2_INFO, "Has work: %s, has plan: %s\n\tRankList size: %zu\n",
-                    _worker->has_work() ? "true" : "false", _has_plan.load() ? "true" : "false",
-                    getJobComm().getRanklist().size());
-            }
 
             if (_worker->plan_step() == WorkerPlanState::PLAN) {
                 _has_plan.store(true);
@@ -75,9 +66,6 @@ void TohtnMultiJob::appl_start() {
                 std::unique_lock in_msg_lock{_in_msg_mutex};
                 std::swap(_in_msgs, new_in_msgs);
             }
-            if (!new_in_msgs.empty()) {
-                LOG(V2_INFO, "Receiving %zu messages\n", new_in_msgs.size());
-            }
             for (auto &in_msg: new_in_msgs) {
                 _worker->add_message(in_msg);
             }
@@ -92,9 +80,6 @@ void TohtnMultiJob::appl_start() {
             }
 
             std::vector<OutWorkerMessage> new_out_msgs{_worker->get_messages(getJobComm().getRanklist())};
-            if (!new_out_msgs.empty()) {
-                LOG(V2_INFO, "Crowd sending %zu messages\n", new_out_msgs.size());
-            }
             {
                 std::unique_lock out_msg_lock{_out_msg_mutex};
                 _out_msgs.insert(_out_msgs.end(), new_out_msgs.begin(), new_out_msgs.end());
@@ -159,7 +144,6 @@ int TohtnMultiJob::appl_solved() {
 JobResult &&TohtnMultiJob::appl_getResult() {
     LOG(V2_INFO, "TohtnMultiJob::appl_getResult()\n");
 
-
     _result = JobResult{};
     _result.id = this->getId();
     _result.revision = this->getRevision();
@@ -192,9 +176,9 @@ void TohtnMultiJob::appl_communicate() {
         std::swap(new_out_msgs, _out_msgs);
     }
 
-    if (!new_out_msgs.empty()) {
+    /*if (!new_out_msgs.empty()) {
         LOG(V2_INFO, "Sending %zu messages!\n", new_out_msgs.size());
-    }
+    }*/
 
     for (auto &msg: new_out_msgs) {
         JobMessage job_msg;
