@@ -55,7 +55,9 @@ void TohtnMultiJob::appl_start() {
         while (true) {
             if (Timer::elapsedSeconds() - _last_log_time >= 1.f) {
                 _last_log_time = Timer::elapsedSeconds();
-                LOG(V2_INFO, "Has work: %s, has plan: %s\n", _worker->has_work() ? "true" : "false", _has_plan.load() ? "true" : "false");
+                LOG(V2_INFO, "Has work: %s, has plan: %s\n\tRankList size: %zu\n",
+                    _worker->has_work() ? "true" : "false", _has_plan.load() ? "true" : "false",
+                    getJobComm().getRanklist().size());
             }
 
             if (_worker->plan_step() == WorkerPlanState::PLAN) {
@@ -76,7 +78,7 @@ void TohtnMultiJob::appl_start() {
             if (!new_in_msgs.empty()) {
                 LOG(V2_INFO, "Receiving %zu messages\n", new_in_msgs.size());
             }
-            for (auto& in_msg : new_in_msgs) {
+            for (auto &in_msg: new_in_msgs) {
                 _worker->add_message(in_msg);
             }
 
@@ -85,7 +87,7 @@ void TohtnMultiJob::appl_start() {
                 std::unique_lock return_msg_lock{_return_msg_mutex};
                 std::swap(_return_msgs, new_return_msgs);
             }
-            for (auto& return_msg : new_return_msgs) {
+            for (auto &return_msg: new_return_msgs) {
                 _worker->return_message(return_msg);
             }
 

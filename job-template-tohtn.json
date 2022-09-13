@@ -5,8 +5,7 @@
     "user": "admin", 
     "name": "templated-job",
     "priority": 1, 
-    "wallclock-limit": "0", 
-    "cpu-limit": "0", 
+    "wallclock-limit": "0",
     "max-demand": 0, 
     "configuration": {} 
 }
