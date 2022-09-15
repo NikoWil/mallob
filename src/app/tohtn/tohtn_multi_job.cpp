@@ -80,7 +80,7 @@ void TohtnMultiJob::appl_start() {
             }
 
             std::vector<OutWorkerMessage> new_out_msgs{_worker->get_messages(getJobComm().getRanklist())};
-            {
+            if (!new_out_msgs.empty()) {
                 std::unique_lock out_msg_lock{_out_msg_mutex};
                 _out_msgs.insert(_out_msgs.end(), new_out_msgs.begin(), new_out_msgs.end());
             }
@@ -175,10 +175,6 @@ void TohtnMultiJob::appl_communicate() {
         std::unique_lock out_msg_lock{_out_msg_mutex};
         std::swap(new_out_msgs, _out_msgs);
     }
-
-    /*if (!new_out_msgs.empty()) {
-        LOG(V2_INFO, "Sending %zu messages!\n", new_out_msgs.size());
-    }*/
 
     for (auto &msg: new_out_msgs) {
         JobMessage job_msg;
