@@ -174,7 +174,6 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 
 void TohtnMultiJob::appl_communicate() {
     using namespace std::chrono;
-    std::this_thread::sleep_for(milliseconds(2000));
 
     std::vector<OutWorkerMessage> new_out_msgs{};
     {
