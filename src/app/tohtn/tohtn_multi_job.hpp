@@ -41,6 +41,9 @@ public:
     ~TohtnMultiJob() override;
 
 private:
+    // parallelize parsing, construction of our parallel worker etc
+    std::thread _init_thread{};
+
     std::string _domain_file_name{};
     std::string _problem_file_name{};
     std::shared_ptr<HtnInstance> _htn{};

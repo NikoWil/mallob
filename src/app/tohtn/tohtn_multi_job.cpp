@@ -2,6 +2,7 @@
 // Created by khondar on 21.06.22.
 //
 
+#include <chrono>
 #include <fstream>
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
@@ -46,63 +47,65 @@ void TohtnMultiJob::init_job() {
 }
 
 void TohtnMultiJob::appl_start() {
-    init_job();
+    _init_thread = std::thread([this]() {
+        init_job();
 
-    _work_thread = std::thread{[this]() {
-        while (true) {
+        _work_thread = std::thread{[this]() {
+            while (true) {
 
-            if (_worker->plan_step() == WorkerPlanState::PLAN) {
-                _has_plan.store(true);
-                auto plan_opt{_worker->get_plan_string()};
-                assert(plan_opt.has_value());
-                _plan = std::string{plan_opt.value()};
-                return;
-            }
+                if (_worker->plan_step() == WorkerPlanState::PLAN) {
+                    _has_plan.store(true);
+                    auto plan_opt{_worker->get_plan_string()};
+                    assert(plan_opt.has_value());
+                    _plan = std::string{plan_opt.value()};
+                    return;
+                }
 
-            // The three sections are in different blocks to make it clear to the compiler that mutexes can be released
-            // again
-            std::vector<InWorkerMessage> new_in_msgs{};
-            {
-                std::unique_lock in_msg_lock{_in_msg_mutex};
-                std::swap(_in_msgs, new_in_msgs);
-            }
-            for (auto &in_msg: new_in_msgs) {
-                _worker->add_message(in_msg);
-            }
+                // The three sections are in different blocks to make it clear to the compiler that mutexes can be released
+                // again
+                std::vector<InWorkerMessage> new_in_msgs{};
+                {
+                    std::unique_lock in_msg_lock{_in_msg_mutex};
+                    std::swap(_in_msgs, new_in_msgs);
+                }
+                for (auto &in_msg: new_in_msgs) {
+                    _worker->add_message(in_msg);
+                }
 
-            std::vector<InWorkerMessage> new_return_msgs{};
-            {
-                std::unique_lock return_msg_lock{_return_msg_mutex};
-                std::swap(_return_msgs, new_return_msgs);
-            }
-            for (auto &return_msg: new_return_msgs) {
-                _worker->return_message(return_msg);
-            }
+                std::vector<InWorkerMessage> new_return_msgs{};
+                {
+                    std::unique_lock return_msg_lock{_return_msg_mutex};
+                    std::swap(_return_msgs, new_return_msgs);
+                }
+                for (auto &return_msg: new_return_msgs) {
+                    _worker->return_message(return_msg);
+                }
 
-            std::vector<OutWorkerMessage> new_out_msgs{_worker->get_messages(getJobComm().getRanklist())};
-            if (!new_out_msgs.empty()) {
-                std::unique_lock out_msg_lock{_out_msg_mutex};
-                _out_msgs.insert(_out_msgs.end(), new_out_msgs.begin(), new_out_msgs.end());
-            }
+                std::vector<OutWorkerMessage> new_out_msgs{_worker->get_messages(getJobComm().getRanklist())};
+                if (!new_out_msgs.empty()) {
+                    std::unique_lock out_msg_lock{_out_msg_mutex};
+                    _out_msgs.insert(_out_msgs.end(), new_out_msgs.begin(), new_out_msgs.end());
+                }
 
-            // suspension and termination are checked after the plan step and messages are handled
-            // i.e., all messages from crowd's side are handled once we reach this point
-            // this assures us that we are kinda fine
+                // suspension and termination are checked after the plan step and messages are handled
+                // i.e., all messages from crowd's side are handled once we reach this point
+                // this assures us that we are kinda fine
 
-            if (_should_suspend.load()) {
-                std::mutex token_mutex{};
-                std::unique_lock token_lock{token_mutex};
-                _suspend_cvar.wait(token_lock, [this]() -> bool { return !_should_suspend.load(); });
-            }
+                if (_should_suspend.load()) {
+                    std::mutex token_mutex{};
+                    std::unique_lock token_lock{token_mutex};
+                    _suspend_cvar.wait(token_lock, [this]() -> bool { return !_should_suspend.load(); });
+                }
 
-            // check for termination
-            if (_should_terminate.load()) {
-                _did_terminate.store(true);
-                return;
+                // check for termination
+                if (_should_terminate.load()) {
+                    _did_terminate.store(true);
+                    return;
+                }
             }
-        }
-    }};
-    LOG(V2_INFO, "Work Thread started\n");
+        }};
+        LOG(V2_INFO, "Work Thread started\n");
+    });
 }
 
 void TohtnMultiJob::appl_suspend() {
@@ -170,6 +173,9 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
+    using namespace std::chrono;
+    std::this_thread::sleep_for(milliseconds(2000));
+
     std::vector<OutWorkerMessage> new_out_msgs{};
     {
         std::unique_lock out_msg_lock{_out_msg_mutex};
@@ -209,7 +215,7 @@ void TohtnMultiJob::appl_dumpStats() {
 
 bool TohtnMultiJob::appl_isDestructible() {
     // TODO: protect call to _worker->is_destructible()
-    return _work_thread.joinable() && _did_terminate.load();
+    return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load();
 }
 
 void TohtnMultiJob::appl_memoryPanic() {
