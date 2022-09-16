@@ -2,7 +2,6 @@
 // Created by khondar on 21.06.22.
 //
 
-#include <chrono>
 #include <fstream>
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
@@ -173,8 +172,6 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
-    using namespace std::chrono;
-
     std::vector<OutWorkerMessage> new_out_msgs{};
     {
         std::unique_lock out_msg_lock{_out_msg_mutex};
