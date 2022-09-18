@@ -220,6 +220,7 @@ void TohtnMultiJob::appl_memoryPanic() {
 }
 
 TohtnMultiJob::~TohtnMultiJob() {
+    LOG(V2_INFO, "Worker destroyed\n");
     _init_thread.join();
     _work_thread.join();
 }
