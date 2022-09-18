@@ -57,6 +57,7 @@ void TohtnMultiJob::appl_start() {
                     auto plan_opt{_worker->get_plan_string()};
                     assert(plan_opt.has_value());
                     _plan = std::string{plan_opt.value()};
+                    _did_terminate.store(true);
                     return;
                 }
 
