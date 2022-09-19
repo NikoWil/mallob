@@ -223,7 +223,7 @@ bool TohtnMultiJob::appl_isDestructible() {
     };
 
     LOG(V2_INFO,
-        "Work Thread %zu is destructible: %s, _init_thread joinable: %s, _work_thread joinable: %s, _did_terminate: %s\n",
+        "Work Thread %zu, _init_thread joinable: %s, _work_thread joinable: %s, _did_terminate: %s\n",
         _worker_id, bool_to_str(_init_thread.joinable()), bool_to_str(_work_thread.joinable()),
         bool_to_str(_did_terminate.load()));
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load();
