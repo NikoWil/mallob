@@ -6,9 +6,12 @@
 #include "tohtn_multi_job.hpp"
 #include "tohtn_utils.hpp"
 
+size_t worker_id{0};
+
 TohtnMultiJob::TohtnMultiJob(const Parameters &params, const JobSetup &setup) : Job(params, setup) {}
 
 void TohtnMultiJob::init_job() {
+    _worker_id = worker_id++;
     {
         // Create filenames for domain and problem, unique to each worker
         // Uniqueness of filename is important in the case where the workers run on the same machine
@@ -58,6 +61,7 @@ void TohtnMultiJob::appl_start() {
                     assert(plan_opt.has_value());
                     _plan = std::string{plan_opt.value()};
                     _did_terminate.store(true);
+                    LOG(V2_INFO, "Work Thread %zu terminated internally\n", _worker_id);
                     return;
                 }
 
@@ -100,11 +104,12 @@ void TohtnMultiJob::appl_start() {
                 // check for termination
                 if (_should_terminate.load()) {
                     _did_terminate.store(true);
+                    LOG(V2_INFO, "Work Thread %zu terminated externally\n", _worker_id);
                     return;
                 }
             }
         }};
-        LOG(V2_INFO, "Work Thread started\n");
+        LOG(V2_INFO, "Work Thread %zu started\n", _worker_id);
     });
 }
 
@@ -212,6 +217,15 @@ void TohtnMultiJob::appl_dumpStats() {
 
 bool TohtnMultiJob::appl_isDestructible() {
     // TODO: protect call to _worker->is_destructible()
+
+    auto bool_to_str = [](bool b) {
+        return b ? "true" : "false";
+    };
+
+    LOG(V2_INFO,
+        "Work Thread %zu is destructible: %s, _init_thread joinable: %s, _work_thread joinable: %s, _did_terminate: %s\n",
+        _worker_id, bool_to_str(_init_thread.joinable()), bool_to_str(_work_thread.joinable()),
+        bool_to_str(_did_terminate.load()));
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load();
 }
 
@@ -220,7 +234,7 @@ void TohtnMultiJob::appl_memoryPanic() {
 }
 
 TohtnMultiJob::~TohtnMultiJob() {
-    LOG(V2_INFO, "Worker destroyed\n");
+    LOG(V2_INFO, "Work Thread %zu destroyed\n", _worker_id);
     _init_thread.join();
     _work_thread.join();
 }
