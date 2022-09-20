@@ -17,7 +17,7 @@
 
 typedef std::shared_ptr<std::vector<uint8_t>> DataPtr;
 typedef std::unique_ptr<std::vector<uint8_t>> UniqueDataPtr;
-typedef std::shared_ptr<const std::vector<uint8_t>> ConstDataPtr; 
+typedef std::shared_ptr<const std::vector<uint8_t>> ConstDataPtr;
 
 class MessageQueue {
     
@@ -191,7 +191,9 @@ private:
                 // Send first and only message
                 //log(V5_DEBG, "MQ SEND SINGLE id=%i\n", id);
                 assert(dest > 0);
-                assert(dest < MyMpi::size());
+                int comm_size{-1};
+                MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+                assert(dest < comm_size);
                 MPI_Isend(data->data(), data->size(), MPI_BYTE, dest, tag, MPI_COMM_WORLD, &request);
                 sentBatches = 1;
                 return;
@@ -205,7 +207,9 @@ private:
                 memcpy(tempStorage.data()+2*sizeof(int), &zero, sizeof(int));
 
                 assert(dest > 0);
-                assert(dest < MyMpi::size());
+                int comm_size{-1};
+                MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+                assert(dest < comm_size);
                 MPI_Isend(tempStorage.data(), 3*sizeof(int), MPI_BYTE,
                     dest, tag+MSG_OFFSET_BATCHED, MPI_COMM_WORLD, &request);
                 sentBatches = totalNumBatches; // mark as finished
@@ -226,8 +230,10 @@ private:
             memcpy(tempStorage.data()+(end-begin)+2*sizeof(int), &totalNumBatches, sizeof(int));
 
             assert(dest > 0);
-            assert(dest < MyMpi::size());
-            MPI_Isend(tempStorage.data(), msglen, MPI_BYTE, dest, 
+            int comm_size{-1};
+            MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+            assert(dest < comm_size);
+            MPI_Isend(tempStorage.data(), msglen, MPI_BYTE, dest,
                     tag+MSG_OFFSET_BATCHED, MPI_COMM_WORLD, &request);
 
             sentBatches++;
