@@ -193,6 +193,7 @@ private:
                 int comm_size{-1};
                 MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
                 if (dest < 0 || dest >= comm_size) {
+                    LOG(V2_INFO, "Aborting MessageQueue->sendNext()\n");
                     std::abort();
                 }
                 MPI_Isend(data->data(), data->size(), MPI_BYTE, dest, tag, MPI_COMM_WORLD, &request);
@@ -210,6 +211,7 @@ private:
                 int comm_size{-1};
                 MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
                 if (dest < 0 || dest >= comm_size) {
+                    LOG(V2_INFO, "Aborting MessageQueue->sendNext()\n");
                     std::abort();
                 }
                 MPI_Isend(tempStorage.data(), 3*sizeof(int), MPI_BYTE,
@@ -234,6 +236,7 @@ private:
             int comm_size{-1};
             MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
             if (dest < 0 || dest >= comm_size) {
+                LOG(V2_INFO, "Aborting MessageQueue->sendNext()\n");
                 std::abort();
             }
             MPI_Isend(tempStorage.data(), msglen, MPI_BYTE, dest,
