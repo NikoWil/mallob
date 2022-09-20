@@ -230,7 +230,7 @@ bool TohtnMultiJob::appl_isDestructible() {
 }
 
 void TohtnMultiJob::appl_memoryPanic() {
-    // TODO: clean up memory used for loop detection
+    LOG(V2_INFO, "Work thread %zu memory panic\n", _worker_id);
 }
 
 TohtnMultiJob::~TohtnMultiJob() {
