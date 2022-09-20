@@ -61,6 +61,8 @@ void MessageQueue::clearCallbacks() {
 }
 
 int MessageQueue::send(DataPtr data, int dest, int tag) {
+    assert(dest > 0);
+    assert(dest < MyMpi::size());
 
     *_current_send_tag = tag;
 

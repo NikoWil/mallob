@@ -190,6 +190,8 @@ private:
             if (!isBatched()) {
                 // Send first and only message
                 //log(V5_DEBG, "MQ SEND SINGLE id=%i\n", id);
+                assert(dest > 0);
+                assert(dest < MyMpi::size());
                 MPI_Isend(data->data(), data->size(), MPI_BYTE, dest, tag, MPI_COMM_WORLD, &request);
                 sentBatches = 1;
                 return;
@@ -201,7 +203,10 @@ private:
                 memcpy(tempStorage.data(), &id, sizeof(int));
                 memcpy(tempStorage.data()+sizeof(int), &zero, sizeof(int));
                 memcpy(tempStorage.data()+2*sizeof(int), &zero, sizeof(int));
-                MPI_Isend(tempStorage.data(), 3*sizeof(int), MPI_BYTE, 
+
+                assert(dest > 0);
+                assert(dest < MyMpi::size());
+                MPI_Isend(tempStorage.data(), 3*sizeof(int), MPI_BYTE,
                     dest, tag+MSG_OFFSET_BATCHED, MPI_COMM_WORLD, &request);
                 sentBatches = totalNumBatches; // mark as finished
                 return;
@@ -220,6 +225,8 @@ private:
             memcpy(tempStorage.data()+(end-begin)+sizeof(int), &sentBatches, sizeof(int));
             memcpy(tempStorage.data()+(end-begin)+2*sizeof(int), &totalNumBatches, sizeof(int));
 
+            assert(dest > 0);
+            assert(dest < MyMpi::size());
             MPI_Isend(tempStorage.data(), msglen, MPI_BYTE, dest, 
                     tag+MSG_OFFSET_BATCHED, MPI_COMM_WORLD, &request);
 
