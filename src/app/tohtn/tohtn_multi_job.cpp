@@ -195,7 +195,7 @@ void TohtnMultiJob::appl_communicate() {
         if (msg.dest < 0 || msg.dest >= MyMpi::size(MPI_COMM_WORLD)) {
             std::string rank_str{};
             for (const auto rank : getJobComm().getRanklist()) {
-                rank_str + std::to_string(rank) + ' ';
+                rank_str += std::to_string(rank) + ' ';
             }
             LOG(V2_INFO, "Invalid ranklist: %s\n", rank_str.c_str());
         }
