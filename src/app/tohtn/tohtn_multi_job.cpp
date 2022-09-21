@@ -192,6 +192,14 @@ void TohtnMultiJob::appl_communicate() {
         // job_msg.epoch and job_msg.checksum can be ignored so far.
         job_msg.payload = std::move(msg.data);
 
+        if (msg.dest < 0 || msg.dest >= MyMpi::size(MPI_COMM_WORLD)) {
+            std::string rank_str{};
+            for (const auto rank : getJobComm().getRanklist()) {
+                rank_str + std::to_string(rank) + ' ';
+            }
+            LOG(V2_INFO, "Invalid ranklist: %s\n", rank_str.c_str());
+        }
+
         MyMpi::isend(msg.dest, MSG_SEND_APPLICATION_MESSAGE, job_msg);
     }
 }
