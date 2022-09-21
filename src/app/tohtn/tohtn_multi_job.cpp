@@ -85,6 +85,16 @@ void TohtnMultiJob::appl_start() {
                     _worker->return_message(return_msg);
                 }
 
+                if (!_ranklist_printed) {
+                    _ranklist_printed = true;
+
+                    std::string ranklist_str{};
+                    for (const auto &rank: getJobComm().getRanklist()) {
+                        ranklist_str += std::to_string(rank) + ' ';
+                    }
+                    LOG(V2_INFO, "New ranklist: %s\n", ranklist_str.c_str());
+                }
+
                 std::vector<OutWorkerMessage> new_out_msgs{_worker->get_messages(getJobComm().getRanklist())};
                 if (!new_out_msgs.empty()) {
                     std::unique_lock out_msg_lock{_out_msg_mutex};
@@ -194,7 +204,7 @@ void TohtnMultiJob::appl_communicate() {
 
         if (msg.dest < 0 || msg.dest >= MyMpi::size(MPI_COMM_WORLD)) {
             std::string rank_str{};
-            for (const auto rank : getJobComm().getRanklist()) {
+            for (const auto rank: getJobComm().getRanklist()) {
                 rank_str += std::to_string(rank) + ' ';
             }
             LOG(V2_INFO, "Invalid ranklist: %s\n", rank_str.c_str());

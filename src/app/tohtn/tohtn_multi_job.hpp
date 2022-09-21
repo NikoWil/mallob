@@ -79,6 +79,8 @@ private:
     // Better logging
     size_t _worker_id{0};
 
+    bool _ranklist_printed{false};
+
     void init_job();
 };
 
