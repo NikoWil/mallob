@@ -61,8 +61,11 @@ void MessageQueue::clearCallbacks() {
 }
 
 int MessageQueue::send(DataPtr data, int dest, int tag) {
-    assert(dest > 0);
-    assert(dest < MyMpi::size());
+    int comm_size{-1};
+    MPI_Comm_size(MPI_COMM_WORLD, &comm_size);
+    if (dest < 0 || dest >= comm_size) {
+        std::abort();
+    }
 
     *_current_send_tag = tag;
 
