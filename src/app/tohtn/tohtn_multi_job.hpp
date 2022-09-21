@@ -76,6 +76,9 @@ private:
     // Bool to ensure that appl_solved() returns true only once per job
     bool _returned_solved{false};
 
+    std::mutex _ranklist_mutex{};
+    std::vector<int> _ranklist{};
+
     // Better logging
     size_t _worker_id{0};
 
