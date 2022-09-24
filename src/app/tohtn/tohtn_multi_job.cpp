@@ -61,7 +61,7 @@ void TohtnMultiJob::appl_start() {
                     assert(plan_opt.has_value());
                     _plan = std::string{plan_opt.value()};
                     _did_terminate.store(true);
-                    LOG(V2_INFO, "Work Thread %zu terminated internally\n", _worker_id);
+                    /*LOG(V2_INFO, "Work Thread %zu terminated internally\n", _worker_id);*/
                     return;
                 }
 
@@ -104,7 +104,7 @@ void TohtnMultiJob::appl_start() {
                 // check for termination
                 if (_should_terminate.load()) {
                     _did_terminate.store(true);
-                    LOG(V2_INFO, "Work Thread %zu terminated externally\n", _worker_id);
+                    /*LOG(V2_INFO, "Work Thread %zu terminated externally\n", _worker_id);*/
                     return;
                 }
             }
@@ -222,10 +222,10 @@ bool TohtnMultiJob::appl_isDestructible() {
         return b ? "true" : "false";
     };
 
-    LOG(V2_INFO,
+    /*LOG(V2_INFO,
         "Work Thread %zu, _init_thread joinable: %s, _work_thread joinable: %s, _did_terminate: %s\n",
         _worker_id, bool_to_str(_init_thread.joinable()), bool_to_str(_work_thread.joinable()),
-        bool_to_str(_did_terminate.load()));
+        bool_to_str(_did_terminate.load()));*/
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load();
 }
 
@@ -234,7 +234,7 @@ void TohtnMultiJob::appl_memoryPanic() {
 }
 
 TohtnMultiJob::~TohtnMultiJob() {
-    LOG(V2_INFO, "Work Thread %zu destroyed\n", _worker_id);
+    /*LOG(V2_INFO, "Work Thread %zu destroyed\n", _worker_id);*/
     _init_thread.join();
     _work_thread.join();
 }
