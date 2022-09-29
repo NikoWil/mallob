@@ -95,6 +95,11 @@ void TohtnMultiJob::appl_start() {
                 // i.e., all messages from crowd's side are handled once we reach this point
                 // this assures us that we are kinda fine
 
+                if (_memory_panic.load()) {
+                    _worker->reduce_memory();
+                    _memory_panic.store(false);
+                }
+
                 if (_should_suspend.load()) {
                     std::mutex token_mutex{};
                     std::unique_lock token_lock{token_mutex};
@@ -231,6 +236,7 @@ bool TohtnMultiJob::appl_isDestructible() {
 
 void TohtnMultiJob::appl_memoryPanic() {
     LOG(V2_INFO, "Work thread %zu memory panic\n", _worker_id);
+    _memory_panic.store(true);
 }
 
 TohtnMultiJob::~TohtnMultiJob() {

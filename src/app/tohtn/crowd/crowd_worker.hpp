@@ -118,6 +118,11 @@ public:
 
     virtual void clear() = 0;
 
+    /**
+     * If memory might run out, delete some data to avoid crashing.
+     */
+    virtual void reduce_memory() = 0;
+
     ~CooperativeCrowdWorker() override = default;
 };
 

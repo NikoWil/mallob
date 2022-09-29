@@ -76,6 +76,9 @@ private:
     // Bool to ensure that appl_solved() returns true only once per job
     bool _returned_solved{false};
 
+    // Communicate a memory panic to the work thread
+    std::atomic<bool> _memory_panic{false};
+
     // Better logging
     size_t _worker_id{0};
 
