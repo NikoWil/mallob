@@ -107,6 +107,19 @@ void TohtnMultiJob::appl_start() {
                     _has_loop_data.store(true);
                 }
 
+                if (_new_loops_avail.exchange(false)) {
+                    std::unique_lock new_loops_lock{_new_loops_mutex};
+                    if (_worker->add_loop_detector_data(_new_loops)) {
+                        // just done to make the information propagate faster
+                        _send_version.store(_worker->get_version());
+                        _version_did_inc.store(true);
+                    }
+                }
+
+                if (_version_should_inc.exchange(false)) {
+                    _worker->set_version(_recv_version.load());
+                }
+
                 if (_should_suspend.load()) {
                     std::mutex token_mutex{};
                     std::unique_lock token_lock{token_mutex};
@@ -192,6 +205,28 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 void TohtnMultiJob::appl_communicate() {
     _syncer.update(getJobTree(), getId(), getRevision());
 
+    if (_version_did_inc.exchange(false)) {
+        JobMessage inc_msg{};
+        inc_msg.jobId = getId();
+        inc_msg.revision = getRevision();
+        inc_msg.tag = TOHTN_TAGS::VERSION_INC;
+
+        static_assert(sizeof(size_t) % sizeof(int) == 0);
+        std::vector<int> payload;
+        payload.reserve(sizeof(size_t) / sizeof(int));
+        size_t version{_send_version.load()};
+        memcpy(payload.data(), &version, sizeof(size_t));
+
+        inc_msg.payload = payload;
+
+        if (getJobTree().hasLeftChild()) {
+            MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, inc_msg);
+        }
+        if (getJobTree().hasRightChild()) {
+            MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, inc_msg);
+        }
+    }
+
     std::vector<OutWorkerMessage> new_out_msgs{};
     {
         std::unique_lock out_msg_lock{_out_msg_mutex};
@@ -216,6 +251,28 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
         _syncer.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getId(), getDescription(),
                                 _needs_loop_data, _has_loop_data, _loop_detector_data);
 
+        auto pot_data{_syncer.get_data()};
+        if (pot_data.has_value()) {
+            std::unique_lock new_loops_lock{_new_loops_mutex};
+            _new_loops = pot_data.value();
+            _new_loops_avail.store(true);
+        }
+
+        return;
+    }
+
+    if (mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::VERSION_INC) {
+        size_t version{0};
+        memcpy(&version, msg.payload.data(), sizeof(size_t));
+        _recv_version.store(version);
+        _version_should_inc.store(true);
+
+        if (getJobTree().hasLeftChild()) {
+            MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
+        }
+        if (getJobTree().hasRightChild()) {
+            MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, msg);
+        }
         return;
     }
 

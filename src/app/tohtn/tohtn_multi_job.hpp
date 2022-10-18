@@ -84,9 +84,21 @@ private:
     std::atomic<bool> _has_loop_data{false};
     std::vector<int> _loop_detector_data{};
 
+    // Communicate loop detection data into the CrowdWorker
+    std::mutex _new_loops_mutex{};
+    std::vector<int> _new_loops{};
+    std::atomic<bool> _new_loops_avail{false};
 
     // Communicate a memory panic to the work thread
     std::atomic<bool> _memory_panic{false};
+
+    // Time statistical restarts
+    float _restart_counter{};
+    std::atomic<size_t> _send_version{0};
+    std::atomic<bool> _version_did_inc{false};
+
+    std::atomic<size_t> _recv_version{0};
+    std::atomic<bool> _version_should_inc{false};
 
     // Better logging
     size_t _worker_id{0};
