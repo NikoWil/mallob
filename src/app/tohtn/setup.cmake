@@ -1,5 +1,6 @@
 # library: malleable TOHTN planner
 set(TOHTN_SOURCES
+        src/app/tohtn/global_syncer.cpp
         src/app/tohtn/tohtn_reader.cpp
         src/app/tohtn/tohtn_simple_job.cpp
         src/app/tohtn/tohtn_utils.cpp

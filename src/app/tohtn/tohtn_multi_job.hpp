@@ -7,7 +7,9 @@
 
 
 #include "app/job.hpp"
+
 #include "crowd/crowd_worker.hpp"
+#include "global_syncer.hpp"
 
 class TohtnMultiJob : public Job {
 public:
@@ -75,6 +77,13 @@ private:
     JobResult _result{};
     // Bool to ensure that appl_solved() returns true only once per job
     bool _returned_solved{false};
+
+    // Work on synchronizing global data
+    GlobalSyncer _syncer;
+    std::atomic<bool> _needs_loop_data{false};
+    std::atomic<bool> _has_loop_data{false};
+    std::vector<int> _loop_detector_data{};
+
 
     // Communicate a memory panic to the work thread
     std::atomic<bool> _memory_panic{false};

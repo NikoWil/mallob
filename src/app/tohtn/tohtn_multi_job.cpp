@@ -4,6 +4,8 @@
 
 #include <fstream>
 #include "tohtn_multi_job.hpp"
+
+#include "tohtn_msg_tags.hpp"
 #include "tohtn_utils.hpp"
 
 size_t worker_id{0};
@@ -100,6 +102,11 @@ void TohtnMultiJob::appl_start() {
                     _memory_panic.store(false);
                 }
 
+                if (_needs_loop_data.load() && !_has_loop_data.load()) {
+                    _loop_detector_data = _worker->get_loop_detector_data();
+                    _has_loop_data.store(true);
+                }
+
                 if (_should_suspend.load()) {
                     std::mutex token_mutex{};
                     std::unique_lock token_lock{token_mutex};
@@ -183,6 +190,8 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
+    _syncer.update(getJobTree(), getId(), getRevision());
+
     std::vector<OutWorkerMessage> new_out_msgs{};
     {
         std::unique_lock out_msg_lock{_out_msg_mutex};
@@ -202,6 +211,14 @@ void TohtnMultiJob::appl_communicate() {
 }
 
 void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
+    if (mpiTag == MSG_SEND_APPLICATION_MESSAGE &&
+        (msg.tag == TOHTN_TAGS::INIT_REDUCTION || msg.tag == TOHTN_TAGS::REDUCTION_DATA)) {
+        _syncer.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getId(), getDescription(),
+                                _needs_loop_data, _has_loop_data, _loop_detector_data);
+
+        return;
+    }
+
     InWorkerMessage worker_msg;
     worker_msg.tag = msg.tag;
     worker_msg.source = source;
