@@ -103,6 +103,7 @@ public:
         if (_finished) return;
 
         if (_child_elems.size() == _num_expected_child_elems && _local_elem.has_value()) {
+            LOG(V2_INFO, "Got all child data, start aggregating\n");
              
             _child_elems.push_front(std::move(_local_elem.value()));
             _local_elem.reset();
@@ -121,6 +122,7 @@ public:
             _reduction_locally_done = true;
             
             if (_tree.isRoot()) {
+                LOG(V2_INFO, "Root data complete, start bcast\n");
                 // Transform reduced element at root
                 if (_has_transformation_at_root) {
                     _aggregated_elem.emplace(_transformation_at_root(_aggregated_elem.value()));
@@ -129,6 +131,7 @@ public:
                 receiveAndForwardFinalElem(std::move(_aggregated_elem.value()));
             } else {
                 // Send to parent
+                LOG(V2_INFO, "Reduction, send off data to %d\n", _tree.getParentNodeRank());
                 _base_msg.payload = std::move(_aggregated_elem.value());
                 MyMpi::isend(_tree.getParentNodeRank(), MSG_JOB_TREE_REDUCTION, _base_msg);
             }
@@ -180,6 +183,7 @@ public:
 
 private:
     void receiveAndForwardFinalElem(AllReduceElement&& elem) {
+        LOG(V2_INFO, "Bcast new data\n");
         _finished = true;
         _base_msg.payload = std::move(elem);
         if (_expected_child_ranks.first >= 0) 

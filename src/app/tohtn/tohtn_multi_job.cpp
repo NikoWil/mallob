@@ -142,6 +142,7 @@ void TohtnMultiJob::appl_suspend() {
     if (_should_terminate.load()) {
         return;
     }
+    _syncer.suspend();
     // get rid of any leftover messages!
     this->communicate();
     _should_suspend.store(true);
@@ -204,8 +205,16 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 
 void TohtnMultiJob::appl_communicate() {
     _syncer.update(getJobTree(), getId(), getRevision());
+    auto pot_data{_syncer.get_data()};
+    if (pot_data.has_value()) {
+        std::unique_lock new_loops_lock{_new_loops_mutex};
+        _new_loops = pot_data.value();
+        _new_loops_avail.store(true);
+    }
 
     if (_version_did_inc.exchange(false)) {
+        _syncer.reset();
+
         JobMessage inc_msg{};
         inc_msg.jobId = getId();
         inc_msg.revision = getRevision();
@@ -246,8 +255,15 @@ void TohtnMultiJob::appl_communicate() {
 }
 
 void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
-    if (mpiTag == MSG_SEND_APPLICATION_MESSAGE &&
-        (msg.tag == TOHTN_TAGS::INIT_REDUCTION || msg.tag == TOHTN_TAGS::REDUCTION_DATA)) {
+    if ((mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::INIT_REDUCTION) ||
+        (mpiTag == MSG_JOB_TREE_REDUCTION && msg.tag == TOHTN_TAGS::REDUCTION_DATA) ||
+        (mpiTag == MSG_JOB_TREE_BROADCAST && msg.tag == TOHTN_TAGS::REDUCTION_DATA)) {
+        std::string inner_tag{msg.tag == TOHTN_TAGS::INIT_REDUCTION ? "INIT_REDUCTION" : "REDUCTION_DATA"};
+        std::string outer_tag{
+                mpiTag == MSG_SEND_APPLICATION_MESSAGE ? "APPLICATION MESSAGE" : mpiTag == MSG_JOB_TREE_REDUCTION
+                                                                                 ? "JOB_TREE_REDUCTION"
+                                                                                 : "JOB_TREE_BROADCAST"};
+        LOG(V2_INFO, "Got message, mpi tag %s, msg tag: %s\n", outer_tag.c_str(), inner_tag.c_str());
         _syncer.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getId(), getDescription(),
                                 _needs_loop_data, _has_loop_data, _loop_detector_data);
 
@@ -261,7 +277,9 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
         return;
     }
 
-    if (mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::VERSION_INC) {
+    if (mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::VERSION_INC && !msg.returnedToSender) {
+        _syncer.reset();
+
         size_t version{0};
         memcpy(&version, msg.payload.data(), sizeof(size_t));
         _recv_version.store(version);
