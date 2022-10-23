@@ -93,7 +93,11 @@ private:
     std::atomic<bool> _memory_panic{false};
 
     // Time statistical restarts
-    float _restart_counter{};
+    std::mt19937 _rng{std::random_device{}()};
+    float _start_time{};
+    float _restart_counter{1.f};
+
+
     std::atomic<size_t> _send_version{0};
     std::atomic<bool> _version_did_inc{false};
 

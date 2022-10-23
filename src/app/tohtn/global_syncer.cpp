@@ -17,9 +17,12 @@ void GlobalSyncer::update(JobTree &job_tree, int job_id, int revision) {
     do {
         changed = false;
         for (size_t idx{0}; idx < _old_reductions.size(); ++idx) {
-            if (_old_reductions.at(idx)->isDestructible()) {
+            /*if (!_old_reductions.at(idx)) {
                 std::swap(_old_reductions.at(idx), _old_reductions.back());
-                _old_reductions.resize(_old_reductions.size() - 1);
+                _old_reductions.pop_back();
+            } else */if (_old_reductions.at(idx)->isDestructible()) {
+                std::swap(_old_reductions.at(idx), _old_reductions.back());
+                _old_reductions.pop_back();
 
                 // avoid underflow case
                 if (idx != 0) {
@@ -34,7 +37,7 @@ void GlobalSyncer::update(JobTree &job_tree, int job_id, int revision) {
     if (!_reduction && job_tree.isRoot()) {
         float curr_time{Timer::elapsedSeconds()};
         if (curr_time - _last_reduction_start >= 1.f) {
-            LOG(V2_INFO, "Kick off init reduction\n");
+            //LOG(V2_INFO, "Kick off init reduction\n");
             _last_reduction_start = curr_time;
             JobMessage init_msg{};
             init_msg.jobId = job_id;
@@ -52,7 +55,7 @@ void GlobalSyncer::update(JobTree &job_tree, int job_id, int revision) {
 
         // happens like this on root only, rest needs a message for it
         if (_reduction->hasResult()) {
-            LOG(V2_INFO, "Reduction complete (update)\n");
+            //LOG(V2_INFO, "Reduction complete (update)\n");
             _result = _reduction->extractResult();
             _reduction = {};
             _last_reduction_start = Timer::elapsedSeconds();
@@ -65,13 +68,13 @@ GlobalSyncer::receive_message(int source, int mpi_tag, JobMessage &msg, JobTree 
                               int job_id, const JobDescription &desc, std::atomic<bool> &need_data,
                               std::atomic<bool> &has_data, std::vector<int> &data) {
     if (mpi_tag == MSG_JOB_TREE_BROADCAST && msg.returnedToSender) {
-        LOG(V2_INFO, "recv message, Bcast came back\n");
+        //LOG(V2_INFO, "recv message, Bcast came back\n");
         // Can happen if our children went invalid during the thing
         return;
     }
 
     if (msg.tag == TOHTN_TAGS::INIT_REDUCTION && msg.returnedToSender) {
-        LOG(V2_INFO, "recv message, Init came back\n");
+        //LOG(V2_INFO, "recv message, Init came back\n");
         JobMessage fake_msg{get_base_message(desc, _epoch)};
         fake_msg.payload = empty_loopdetector_message();
         _reduction->receive(source, MSG_JOB_TREE_REDUCTION, fake_msg);
@@ -79,36 +82,40 @@ GlobalSyncer::receive_message(int source, int mpi_tag, JobMessage &msg, JobTree 
     }
 
     if (msg.tag == TOHTN_TAGS::INIT_REDUCTION && !msg.returnedToSender) {
-        LOG(V2_INFO, "recv message, Init reduction message\n");
+        //LOG(V2_INFO, "recv message, Init reduction message\n");
         init_reduction(job_tree, revision, msg.epoch, job_id, desc, need_data, has_data, data);
         return;
     }
 
     if (_reduction && (mpi_tag == MSG_JOB_TREE_REDUCTION || mpi_tag == MSG_JOB_TREE_BROADCAST)) {
-        LOG(V2_INFO, "recv message, Loop data\n");
+        //LOG(V2_INFO, "recv message, Loop data\n");
         // got some data
         _reduction->receive(source, mpi_tag, msg);
 
         if (_reduction->hasResult()) {
-            LOG(V2_INFO, "Reduction complete (message)\n");
+            //LOG(V2_INFO, "Reduction complete (message)\n");
             _result = _reduction->extractResult();
             _reduction = {};
             _last_reduction_start = Timer::elapsedSeconds();
         }
         return;
     }
-    LOG(V2_INFO, "recv message, didn't take it\n");
+    //LOG(V2_INFO, "recv message, didn't take it\n");
 }
 
 void GlobalSyncer::suspend() {
     _reduction->cancel();
-    _old_reductions.push_back(std::move(_reduction));
-    _reduction = {};
+    if (_reduction) {
+        _old_reductions.push_back(std::move(_reduction));
+        _reduction = {};
+    }
 }
 
 void GlobalSyncer::reset() {
-    _old_reductions.push_back(std::move(_reduction));
-    _reduction = {};
+    if (_reduction) {
+        _old_reductions.push_back(std::move(_reduction));
+        _reduction = {};
+    }
     _last_reduction_start = Timer::elapsedSeconds();
 }
 
@@ -124,8 +131,8 @@ std::optional<std::vector<int>> GlobalSyncer::get_data() {
 
 void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, int job_id, const JobDescription &desc,
                                   std::atomic<bool> &need_data, std::atomic<bool> &has_data, std::vector<int> &data) {
-    LOG(V2_INFO, "Init reduction %d, is root: %s, left: %s, right: %s\n", epoch, job_tree.isRoot() ? "true" : "false",
-        job_tree.hasLeftChild() ? "true" : "false", job_tree.hasRightChild() ? "true" : "false");
+    /*LOG(V2_INFO, "Init reduction %d, is root: %s, left: %s, right: %s\n", epoch, job_tree.isRoot() ? "true" : "false",
+        job_tree.hasLeftChild() ? "true" : "false", job_tree.hasRightChild() ? "true" : "false");//*/
     // Replace with new reduction if needed
     if (epoch > _epoch) {
         if (_reduction) {
@@ -144,11 +151,11 @@ void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, in
     bcast_msg.tag = TOHTN_TAGS::INIT_REDUCTION;
     bcast_msg.epoch = _epoch;
     if (job_tree.hasLeftChild()) {
-        LOG(V2_INFO, "Left child: %d\n", job_tree.getLeftChildNodeRank());
+        //LOG(V2_INFO, "Left child: %d\n", job_tree.getLeftChildNodeRank());
         MyMpi::isend(job_tree.getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, bcast_msg);
     }
     if (job_tree.hasRightChild()) {
-        LOG(V2_INFO, "Right child: %d\n", job_tree.getRightChildNodeRank());
+        //LOG(V2_INFO, "Right child: %d\n", job_tree.getRightChildNodeRank());
         MyMpi::isend(job_tree.getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, bcast_msg);
     }
 
@@ -175,7 +182,7 @@ void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, in
         std::vector<int> new_data{std::move(data)};
         need_data.store(false);
         has_data.store(false);
-        LOG(V2_INFO, "Produced data\n");
+        //LOG(V2_INFO, "Produced data\n");
         return new_data;
     });
 }

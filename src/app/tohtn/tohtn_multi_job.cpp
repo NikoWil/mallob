@@ -48,6 +48,8 @@ void TohtnMultiJob::init_job() {
 
     _worker = create_cooperative_worker(_htn, seeds, SearchAlgorithm::DFS, LoopDetectionMode::GLOBAL_BLOOM,
                                         getJobTree().isRoot());
+
+    _start_time = Timer::elapsedSeconds();
 }
 
 void TohtnMultiJob::appl_start() {
@@ -63,7 +65,7 @@ void TohtnMultiJob::appl_start() {
                     assert(plan_opt.has_value());
                     _plan = std::string{plan_opt.value()};
                     _did_terminate.store(true);
-                    /*LOG(V2_INFO, "Work Thread %zu terminated internally\n", _worker_id);*/
+                    //LOG(V2_INFO, "Work Thread %zu terminated internally\n", _worker_id);
                     return;
                 }
 
@@ -117,6 +119,7 @@ void TohtnMultiJob::appl_start() {
                 }
 
                 if (_version_should_inc.exchange(false)) {
+                    LOG(V2_INFO, "Version increase applied!\n");
                     _worker->set_version(_recv_version.load());
                 }
 
@@ -129,7 +132,7 @@ void TohtnMultiJob::appl_start() {
                 // check for termination
                 if (_should_terminate.load()) {
                     _did_terminate.store(true);
-                    /*LOG(V2_INFO, "Work Thread %zu terminated externally\n", _worker_id);*/
+                    //LOG(V2_INFO, "Work Thread %zu terminated externally\n", _worker_id);
                     return;
                 }
             }
@@ -204,6 +207,19 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
+    // Perform restarts if needed, try for it once per second
+    if (getJobTree().isRoot() && ((Timer::elapsedSeconds() - _restart_counter) > _start_time)) {
+        LOG(V2_INFO, "Try for restart\n");
+        std::uniform_real_distribution<float> dis(0.0, 1.0);
+        if (dis(_rng) < (1.f / _restart_counter)) {
+            LOG(V2_INFO, "Actually do restart!\n");
+            _version_did_inc.store(true);
+            _send_version.fetch_add(1);
+        }
+
+        _restart_counter += 1;
+    }
+
     _syncer.update(getJobTree(), getId(), getRevision());
     auto pot_data{_syncer.get_data()};
     if (pot_data.has_value()) {
@@ -221,19 +237,21 @@ void TohtnMultiJob::appl_communicate() {
         inc_msg.tag = TOHTN_TAGS::VERSION_INC;
 
         static_assert(sizeof(size_t) % sizeof(int) == 0);
-        std::vector<int> payload;
-        payload.reserve(sizeof(size_t) / sizeof(int));
+        std::vector<int> payload(sizeof(size_t) / sizeof(int), 0);
         size_t version{_send_version.load()};
         memcpy(payload.data(), &version, sizeof(size_t));
 
+        std::string payload_str{};
+        for (const auto &elem: payload) {
+            payload_str += std::to_string(elem) + " ";
+        }
+        LOG(V2_INFO, "Send version: %zu, payload: %s\n", version, payload_str.c_str());
+
         inc_msg.payload = payload;
 
-        if (getJobTree().hasLeftChild()) {
-            MyMpi::isend(getJobTree().getLeftChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, inc_msg);
-        }
-        if (getJobTree().hasRightChild()) {
-            MyMpi::isend(getJobTree().getRightChildNodeRank(), MSG_SEND_APPLICATION_MESSAGE, inc_msg);
-        }
+        // Sending message to ourselves to have fewer special cases
+        // The version itself will be ignored here as it is not actually an increase (is a noop for Crowd)
+        MyMpi::isend(getJobTree().getRank(), MSG_SEND_APPLICATION_MESSAGE, inc_msg);
     }
 
     std::vector<OutWorkerMessage> new_out_msgs{};
@@ -258,12 +276,12 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     if ((mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::INIT_REDUCTION) ||
         (mpiTag == MSG_JOB_TREE_REDUCTION && msg.tag == TOHTN_TAGS::REDUCTION_DATA) ||
         (mpiTag == MSG_JOB_TREE_BROADCAST && msg.tag == TOHTN_TAGS::REDUCTION_DATA)) {
-        std::string inner_tag{msg.tag == TOHTN_TAGS::INIT_REDUCTION ? "INIT_REDUCTION" : "REDUCTION_DATA"};
+        /*std::string inner_tag{msg.tag == TOHTN_TAGS::INIT_REDUCTION ? "INIT_REDUCTION" : "REDUCTION_DATA"};
         std::string outer_tag{
                 mpiTag == MSG_SEND_APPLICATION_MESSAGE ? "APPLICATION MESSAGE" : mpiTag == MSG_JOB_TREE_REDUCTION
                                                                                  ? "JOB_TREE_REDUCTION"
                                                                                  : "JOB_TREE_BROADCAST"};
-        LOG(V2_INFO, "Got message, mpi tag %s, msg tag: %s\n", outer_tag.c_str(), inner_tag.c_str());
+        LOG(V2_INFO, "Got message, mpi tag %s, msg tag: %s\n", outer_tag.c_str(), inner_tag.c_str());//*/
         _syncer.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getId(), getDescription(),
                                 _needs_loop_data, _has_loop_data, _loop_detector_data);
 
@@ -278,7 +296,14 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     }
 
     if (mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::VERSION_INC && !msg.returnedToSender) {
+        LOG(V2_INFO, "Version increase received!\n");
         _syncer.reset();
+
+        std::string payload_str{};
+        for (const auto &elem: msg.payload) {
+            payload_str += std::to_string(elem) + " ";
+        }
+        LOG(V2_INFO, "Recv version payload: %s\n", payload_str.c_str());
 
         size_t version{0};
         memcpy(&version, msg.payload.data(), sizeof(size_t));
