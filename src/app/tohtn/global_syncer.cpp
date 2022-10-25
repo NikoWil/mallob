@@ -103,8 +103,8 @@ GlobalSyncer::receive_message(int source, int mpi_tag, JobMessage &msg, JobTree 
 }
 
 void GlobalSyncer::suspend() {
-    _reduction->cancel();
     if (_reduction) {
+        _reduction->cancel();
         _old_reductions.push_back(std::move(_reduction));
         _reduction = {};
     }
