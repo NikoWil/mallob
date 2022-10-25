@@ -289,7 +289,7 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
                                                                                  : "JOB_TREE_BROADCAST"};
         LOG(V2_INFO, "Got message, mpi tag %s, msg tag: %s\n", outer_tag.c_str(), inner_tag.c_str());//*/
         _syncer.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getId(), getDescription(),
-                                _needs_loop_data, _has_loop_data, _loop_detector_data);
+                                _needs_loop_data);
 
         auto pot_data{_syncer.get_data()};
         if (pot_data.has_value()) {
