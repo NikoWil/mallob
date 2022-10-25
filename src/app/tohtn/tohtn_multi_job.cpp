@@ -208,7 +208,7 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 
 void TohtnMultiJob::appl_communicate() {
     if (_needs_loop_data.load() && _has_loop_data.load()) {
-        _syncer.produce([this]() { return _new_loops; });
+        _syncer.produce([this]() { return _loop_detector_data; });
         _needs_loop_data.store(false);
         _has_loop_data.store(false);
     }
