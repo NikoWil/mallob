@@ -65,8 +65,7 @@ void GlobalSyncer::update(JobTree &job_tree, int job_id, int revision) {
 
 void
 GlobalSyncer::receive_message(int source, int mpi_tag, JobMessage &msg, JobTree &job_tree, int revision,
-                              int job_id, const JobDescription &desc, std::atomic<bool> &need_data,
-                              std::atomic<bool> &has_data, std::vector<int> &data) {
+                              int job_id, const JobDescription &desc, std::atomic<bool> &need_data) {
     if (mpi_tag == MSG_JOB_TREE_BROADCAST && msg.returnedToSender) {
         //LOG(V2_INFO, "recv message, Bcast came back\n");
         // Can happen if our children went invalid during the thing
@@ -83,7 +82,7 @@ GlobalSyncer::receive_message(int source, int mpi_tag, JobMessage &msg, JobTree 
 
     if (msg.tag == TOHTN_TAGS::INIT_REDUCTION && !msg.returnedToSender) {
         //LOG(V2_INFO, "recv message, Init reduction message\n");
-        init_reduction(job_tree, revision, msg.epoch, job_id, desc, need_data, has_data, data);
+        init_reduction(job_tree, revision, msg.epoch, job_id, desc, need_data);
         return;
     }
 
@@ -119,6 +118,12 @@ void GlobalSyncer::reset() {
     _last_reduction_start = Timer::elapsedSeconds();
 }
 
+void GlobalSyncer::produce(std::function<std::vector<int>()> producer) {
+    if (_reduction) {
+        _reduction->produce(producer);
+    }
+}
+
 std::optional<std::vector<int>> GlobalSyncer::get_data() {
     if (_result.empty()) {
         return std::optional<std::vector<int>>{};
@@ -130,7 +135,7 @@ std::optional<std::vector<int>> GlobalSyncer::get_data() {
 }
 
 void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, int job_id, const JobDescription &desc,
-                                  std::atomic<bool> &need_data, std::atomic<bool> &has_data, std::vector<int> &data) {
+                                  std::atomic<bool> &need_data) {
     /*LOG(V2_INFO, "Init reduction %d, is root: %s, left: %s, right: %s\n", epoch, job_tree.isRoot() ? "true" : "false",
         job_tree.hasLeftChild() ? "true" : "false", job_tree.hasRightChild() ? "true" : "false");//*/
     // Replace with new reduction if needed
@@ -175,14 +180,6 @@ void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, in
                                                       return new_elem;
                                                   }
             );
-    // Get the data in there
-    _reduction->produce([&need_data, &has_data, &data]() {
-        need_data.store(true);
-        while (!has_data.load()) {}
-        std::vector<int> new_data{std::move(data)};
-        need_data.store(false);
-        has_data.store(false);
-        //LOG(V2_INFO, "Produced data\n");
-        return new_data;
-    });
+
+    need_data.store(true);
 }

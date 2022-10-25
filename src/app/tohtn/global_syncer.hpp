@@ -16,8 +16,7 @@ public:
     void update(JobTree &job_tree, int job_id, int revision);
 
     void receive_message(int source, int mpi_tag, JobMessage &msg, JobTree &job_tree, int revision, int job_id,
-                         const JobDescription &desc, std::atomic<bool> &need_data, std::atomic<bool> &has_data,
-                         std::vector<int> &data);
+                         const JobDescription &desc, std::atomic<bool> &need_data);
 
     /**
      * Activate on suspend
@@ -32,12 +31,15 @@ public:
      */
     void reset();
 
+
+    void produce(std::function<std::vector<int>()> producer);
+
     std::optional<std::vector<int>> get_data();
 
 private:
     void
     init_reduction(JobTree &job_tree, int revision, int epoch, int job_id, const JobDescription &desc,
-                   std::atomic<bool> &need_data, std::atomic<bool> &has_data, std::vector<int> &data);
+                   std::atomic<bool> &need_data);
 
     std::unique_ptr<JobTreeAllReduction> _reduction;
     float _last_reduction_start{Timer::elapsedSeconds()};

@@ -207,6 +207,12 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
+    if (_needs_loop_data.load() && _has_loop_data.load()) {
+        _syncer.produce([this]() { return _new_loops; });
+        _needs_loop_data.store(false);
+        _has_loop_data.store(false);
+    }
+
     // Perform restarts if needed, try for it once per second
     if (getJobTree().isRoot() && ((Timer::elapsedSeconds() - _restart_counter) > _start_time)) {
         LOG(V2_INFO, "Try for restart\n");
