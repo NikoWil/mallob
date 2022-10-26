@@ -60,6 +60,7 @@ void TohtnMultiJob::appl_start() {
             while (true) {
 
                 if (_worker->plan_step() == WorkerPlanState::PLAN) {
+                    LOG(V2_INFO, "PLAN FOUND\n");
                     _has_plan.store(true);
                     auto plan_opt{_worker->get_plan_string()};
                     assert(plan_opt.has_value());
@@ -147,8 +148,9 @@ void TohtnMultiJob::appl_suspend() {
     }
     _syncer.suspend();
     // get rid of any leftover messages!
-    this->communicate();
     _should_suspend.store(true);
+
+    this->communicate();
 }
 
 void TohtnMultiJob::appl_resume() {
@@ -215,10 +217,8 @@ void TohtnMultiJob::appl_communicate() {
 
     // Perform restarts if needed, try for it once per second
     if (getJobTree().isRoot() && ((Timer::elapsedSeconds() - _restart_counter) > _start_time)) {
-        LOG(V2_INFO, "Try for restart\n");
         std::uniform_real_distribution<float> dis(0.0, 1.0);
         if (dis(_rng) < (1.f / _restart_counter)) {
-            LOG(V2_INFO, "Actually do restart!\n");
             _version_did_inc.store(true);
             _send_version.fetch_add(1);
         }
@@ -246,12 +246,6 @@ void TohtnMultiJob::appl_communicate() {
         std::vector<int> payload(sizeof(size_t) / sizeof(int), 0);
         size_t version{_send_version.load()};
         memcpy(payload.data(), &version, sizeof(size_t));
-
-        std::string payload_str{};
-        for (const auto &elem: payload) {
-            payload_str += std::to_string(elem) + " ";
-        }
-        LOG(V2_INFO, "Send version: %zu, payload: %s\n", version, payload_str.c_str());
 
         inc_msg.payload = payload;
 
@@ -302,14 +296,7 @@ void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
     }
 
     if (mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::VERSION_INC && !msg.returnedToSender) {
-        LOG(V2_INFO, "Version increase received!\n");
         _syncer.reset();
-
-        std::string payload_str{};
-        for (const auto &elem: msg.payload) {
-            payload_str += std::to_string(elem) + " ";
-        }
-        LOG(V2_INFO, "Recv version payload: %s\n", payload_str.c_str());
 
         size_t version{0};
         memcpy(&version, msg.payload.data(), sizeof(size_t));
