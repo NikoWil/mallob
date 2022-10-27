@@ -105,20 +105,6 @@ void TohtnMultiJob::appl_start() {
                     _memory_panic.store(false);
                 }
 
-                if (_needs_loop_data.load() && !_has_loop_data.load()) {
-                    _loop_detector_data = _worker->get_loop_detector_data();
-                    _has_loop_data.store(true);
-                }
-
-                if (_new_loops_avail.exchange(false)) {
-                    std::unique_lock new_loops_lock{_new_loops_mutex};
-                    if (_worker->add_loop_detector_data(_new_loops)) {
-                        // just done to make the information propagate faster
-                        _send_version.store(_worker->get_version());
-                        _version_did_inc.store(true);
-                    }
-                }
-
                 if (_version_should_inc.exchange(false)) {
                     LOG(V2_INFO, "Version increase applied!\n");
                     _worker->set_version(_recv_version.load());
@@ -146,7 +132,6 @@ void TohtnMultiJob::appl_suspend() {
     if (_should_terminate.load()) {
         return;
     }
-    _syncer.suspend();
     // get rid of any leftover messages!
     _should_suspend.store(true);
 
@@ -209,12 +194,6 @@ JobResult &&TohtnMultiJob::appl_getResult() {
 }
 
 void TohtnMultiJob::appl_communicate() {
-    if (_needs_loop_data.load() && _has_loop_data.load()) {
-        _syncer.produce([this]() { return _loop_detector_data; });
-        _needs_loop_data.store(false);
-        _has_loop_data.store(false);
-    }
-
     // Perform restarts if needed, try for it once per second
     if (getJobTree().isRoot() && ((Timer::elapsedSeconds() - _restart_counter) > _start_time)) {
         std::uniform_real_distribution<float> dis(0.0, 1.0);
@@ -226,17 +205,7 @@ void TohtnMultiJob::appl_communicate() {
         _restart_counter += 1;
     }
 
-    _syncer.update(getJobTree(), getId(), getRevision());
-    auto pot_data{_syncer.get_data()};
-    if (pot_data.has_value()) {
-        std::unique_lock new_loops_lock{_new_loops_mutex};
-        _new_loops = pot_data.value();
-        _new_loops_avail.store(true);
-    }
-
     if (_version_did_inc.exchange(false)) {
-        _syncer.reset();
-
         JobMessage inc_msg{};
         inc_msg.jobId = getId();
         inc_msg.revision = getRevision();
@@ -273,31 +242,7 @@ void TohtnMultiJob::appl_communicate() {
 }
 
 void TohtnMultiJob::appl_communicate(int source, int mpiTag, JobMessage &msg) {
-    if ((mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::INIT_REDUCTION) ||
-        (mpiTag == MSG_JOB_TREE_REDUCTION && msg.tag == TOHTN_TAGS::REDUCTION_DATA) ||
-        (mpiTag == MSG_JOB_TREE_BROADCAST && msg.tag == TOHTN_TAGS::REDUCTION_DATA)) {
-        /*std::string inner_tag{msg.tag == TOHTN_TAGS::INIT_REDUCTION ? "INIT_REDUCTION" : "REDUCTION_DATA"};
-        std::string outer_tag{
-                mpiTag == MSG_SEND_APPLICATION_MESSAGE ? "APPLICATION MESSAGE" : mpiTag == MSG_JOB_TREE_REDUCTION
-                                                                                 ? "JOB_TREE_REDUCTION"
-                                                                                 : "JOB_TREE_BROADCAST"};
-        LOG(V2_INFO, "Got message, mpi tag %s, msg tag: %s\n", outer_tag.c_str(), inner_tag.c_str());//*/
-        _syncer.receive_message(source, mpiTag, msg, getJobTree(), getRevision(), getId(), getDescription(),
-                                _needs_loop_data);
-
-        auto pot_data{_syncer.get_data()};
-        if (pot_data.has_value()) {
-            std::unique_lock new_loops_lock{_new_loops_mutex};
-            _new_loops = pot_data.value();
-            _new_loops_avail.store(true);
-        }
-
-        return;
-    }
-
     if (mpiTag == MSG_SEND_APPLICATION_MESSAGE && msg.tag == TOHTN_TAGS::VERSION_INC && !msg.returnedToSender) {
-        _syncer.reset();
-
         size_t version{0};
         memcpy(&version, msg.payload.data(), sizeof(size_t));
         _recv_version.store(version);
