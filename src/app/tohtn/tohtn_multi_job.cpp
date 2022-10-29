@@ -125,6 +125,14 @@ void TohtnMultiJob::appl_start() {
                 }
 
                 if (_should_suspend.load()) {
+                    _worker->clear();
+
+                    auto root_msg{_worker->get_local_root_message(getJobComm().getRanklist())};
+                    if (root_msg.has_value()) {
+                        std::unique_lock out_msg_lock{_out_msg_mutex};
+                        _out_msgs.push_back(root_msg.value());
+                    }
+
                     std::mutex token_mutex{};
                     std::unique_lock token_lock{token_mutex};
                     _suspend_cvar.wait(token_lock, [this]() -> bool { return !_should_suspend.load(); });
@@ -333,15 +341,20 @@ void TohtnMultiJob::appl_dumpStats() {
 bool TohtnMultiJob::appl_isDestructible() {
     // TODO: protect call to _worker->is_destructible()
 
-    auto bool_to_str = [](bool b) {
+    /*auto bool_to_str = [](bool b) {
         return b ? "true" : "false";
     };
 
-    /*LOG(V2_INFO,
+    LOG(V2_INFO,
         "Work Thread %zu, _init_thread joinable: %s, _work_thread joinable: %s, _did_terminate: %s\n",
         _worker_id, bool_to_str(_init_thread.joinable()), bool_to_str(_work_thread.joinable()),
         bool_to_str(_did_terminate.load()));*/
-    return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load();
+
+    // Ensure everything has been sent off before termination
+    communicate();
+    std::unique_lock out_msg_lock{_out_msg_mutex};
+
+    return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty();
 }
 
 void TohtnMultiJob::appl_memoryPanic() {

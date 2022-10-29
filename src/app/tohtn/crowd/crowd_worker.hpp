@@ -123,6 +123,12 @@ public:
      */
     virtual void reduce_memory() = 0;
 
+    /*
+     * Is empty if there is no local root
+     * @return
+     */
+    [[nodiscard]] virtual std::optional<OutWorkerMessage> get_local_root_message(const std::vector<int>& worker_ids) = 0;
+
     ~CooperativeCrowdWorker() override = default;
 };
 

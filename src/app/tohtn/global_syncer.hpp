@@ -36,10 +36,14 @@ public:
 
     std::optional<std::vector<int>> get_data();
 
+    bool is_destructible();
+
 private:
     void
     init_reduction(JobTree &job_tree, int revision, int epoch, int job_id, const JobDescription &desc,
                    std::atomic<bool> &need_data);
+
+    void cleanup_old_reductions();
 
     std::unique_ptr<JobTreeAllReduction> _reduction;
     float _last_reduction_start{Timer::elapsedSeconds()};

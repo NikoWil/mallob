@@ -1,2 +1,0 @@
-../eval-instances/Childsnack/domain.hddl ../eval-instances/Childsnack/p22.hddl
-../eval-instances/Satellite-GTOHP/domain.hddl ../eval-instances/Satellite-GTOHP/p20.hddl

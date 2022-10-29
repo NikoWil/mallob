@@ -13,26 +13,7 @@ JobMessage get_base_message(const JobDescription &desc, int epoch) {
 
 void GlobalSyncer::update(JobTree &job_tree, int job_id, int revision) {
     // destroy as many old reductions as possible, yee-haw
-    bool changed{false};
-    do {
-        changed = false;
-        for (size_t idx{0}; idx < _old_reductions.size(); ++idx) {
-            /*if (!_old_reductions.at(idx)) {
-                std::swap(_old_reductions.at(idx), _old_reductions.back());
-                _old_reductions.pop_back();
-            } else */if (_old_reductions.at(idx)->isDestructible()) {
-                std::swap(_old_reductions.at(idx), _old_reductions.back());
-                _old_reductions.pop_back();
-
-                // avoid underflow case
-                if (idx != 0) {
-                    idx--;
-                } else {
-                    changed = true;
-                }
-            }
-        }
-    } while (changed);
+    cleanup_old_reductions();
 
     if (!_reduction && job_tree.isRoot()) {
         float curr_time{Timer::elapsedSeconds()};
@@ -134,6 +115,11 @@ std::optional<std::vector<int>> GlobalSyncer::get_data() {
     }
 }
 
+bool GlobalSyncer::is_destructible() {
+    cleanup_old_reductions();
+    return _old_reductions.empty();
+}
+
 void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, int job_id, const JobDescription &desc,
                                   std::atomic<bool> &need_data) {
     /*LOG(V2_INFO, "Init reduction %d, is root: %s, left: %s, right: %s\n", epoch, job_tree.isRoot() ? "true" : "false",
@@ -182,4 +168,27 @@ void GlobalSyncer::init_reduction(JobTree &job_tree, int revision, int epoch, in
             );
 
     need_data.store(true);
+}
+
+void GlobalSyncer::cleanup_old_reductions() {
+    bool changed{false};
+    do {
+        changed = false;
+        for (size_t idx{0}; idx < _old_reductions.size(); ++idx) {
+            /*if (!_old_reductions.at(idx)) {
+                std::swap(_old_reductions.at(idx), _old_reductions.back());
+                _old_reductions.pop_back();
+            } else */if (_old_reductions.at(idx)->isDestructible()) {
+                std::swap(_old_reductions.at(idx), _old_reductions.back());
+                _old_reductions.pop_back();
+
+                // avoid underflow case
+                if (idx != 0) {
+                    idx--;
+                } else {
+                    changed = true;
+                }
+            }
+        }
+    } while (changed);
 }
