@@ -60,7 +60,7 @@ void TohtnMultiJob::appl_start() {
             while (true) {
 
                 if (_worker->plan_step() == WorkerPlanState::PLAN) {
-                    LOG(V2_INFO, "PLAN FOUND\n");
+                    LOG(V2_INFO, "Job %d PLAN FOUND\n", getDescription().getId());
                     _has_plan.store(true);
                     auto plan_opt{_worker->get_plan_string()};
                     assert(plan_opt.has_value());
@@ -145,9 +145,9 @@ void TohtnMultiJob::appl_start() {
                     return;
                 }
             }
-            LOG(V2_INFO, "Work Thread terminated\n");
+            LOG(V2_INFO, "Job %d Work Thread terminated\n", getDescription().getId());
         }};
-        LOG(V2_INFO, "Work Thread %zu started\n", _worker_id);
+        LOG(V2_INFO, "Job %d Work Thread %zu started\n", getDescription().getId(), _worker_id);
     });
 }
 
@@ -355,7 +355,7 @@ bool TohtnMultiJob::appl_isDestructible() {
     communicate();
 
     std::unique_lock out_msg_lock{_out_msg_mutex};
-    LOG(V2_INFO, "Worker is destructible: %s\n", _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty() ? "true" : "false");
+    LOG(V2_INFO, "Job %d Worker is destructible: %s\n", getDescription().getId(), _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty() ? "true" : "false");
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty();
 }
 
@@ -366,7 +366,7 @@ void TohtnMultiJob::appl_memoryPanic() {
 
 TohtnMultiJob::~TohtnMultiJob() {
     /*LOG(V2_INFO, "Work Thread %zu destroyed\n", _worker_id);*/
-    LOG(V2_INFO, "Worker destroyed\n");
+    LOG(V2_INFO, "Job %d Worker destroyed\n", getDescription().getId());
     _init_thread.join();
     _work_thread.join();
 }
