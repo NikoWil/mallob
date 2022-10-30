@@ -125,7 +125,7 @@ void TohtnMultiJob::appl_start() {
                 }
 
                 if (_should_suspend.load()) {
-                    LOG(V2_INFO, "Job %d did suspend", getDescription().getId());
+                    LOG(V2_INFO, "Job %d did suspend", getId());
                     _worker->clear();
 
                     auto root_msg{_worker->get_local_root_message(getJobComm().getRanklist())};
@@ -146,9 +146,9 @@ void TohtnMultiJob::appl_start() {
                     return;
                 }
             }
-            LOG(V2_INFO, "Job %d Work Thread terminated\n", getDescription().getId());
+            LOG(V2_INFO, "Job %d Work Thread terminated\n", getId());
         }};
-        LOG(V2_INFO, "Job %d Work Thread %zu started\n", getDescription().getId(), _worker_id);
+        LOG(V2_INFO, "Job %d Work Thread %zu started\n", getId(), _worker_id);
     });
 }
 
@@ -174,7 +174,7 @@ void TohtnMultiJob::appl_resume() {
 }
 
 void TohtnMultiJob::appl_terminate() {
-    LOG(V2_INFO, "Job %d should terminate\n", getDescription().getId());
+    LOG(V2_INFO, "Job %d should terminate\n", getId());
     _should_terminate.store(true);
     // get rid of any leftover messages!
     this->communicate();
@@ -358,7 +358,7 @@ bool TohtnMultiJob::appl_isDestructible() {
     appl_communicate();
 
     std::unique_lock out_msg_lock{_out_msg_mutex};
-    LOG(V2_INFO, "Job %d Worker is destructible: init joinable %s, work thread joinable: %s, did terminate: %s, syncer destructible: %s, out msgs empty: %s\n", getDescription().getId(), bts(_init_thread.joinable()), bts(_work_thread.joinable()), bts(_did_terminate.load()), bts(_syncer.is_destructible()), bts(_out_msgs.empty()));
+    LOG(V2_INFO, "Job %d Worker is destructible: init joinable %s, work thread joinable: %s, did terminate: %s, syncer destructible: %s, out msgs empty: %s\n", getId(), bts(_init_thread.joinable()), bts(_work_thread.joinable()), bts(_did_terminate.load()), bts(_syncer.is_destructible()), bts(_out_msgs.empty()));
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty();
 }
 
@@ -369,7 +369,7 @@ void TohtnMultiJob::appl_memoryPanic() {
 
 TohtnMultiJob::~TohtnMultiJob() {
     /*LOG(V2_INFO, "Work Thread %zu destroyed\n", _worker_id);*/
-    LOG(V2_INFO, "Job %d Worker destroyed\n", getDescription().getId());
+    LOG(V2_INFO, "Job %d Worker destroyed\n", getId());
     _init_thread.join();
     _work_thread.join();
 }
