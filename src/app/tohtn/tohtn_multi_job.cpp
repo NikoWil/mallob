@@ -120,7 +120,7 @@ void TohtnMultiJob::appl_start() {
                 }
 
                 if (_version_should_inc.exchange(false)) {
-                    LOG(V2_INFO, "Version increase applied!\n");
+                    //LOG(V2_INFO, "Version increase applied!\n");
                     _worker->set_version(_recv_version.load());
                 }
 
@@ -145,6 +145,7 @@ void TohtnMultiJob::appl_start() {
                     return;
                 }
             }
+            LOG(V2_INFO, "Work Thread terminated\n");
         }};
         LOG(V2_INFO, "Work Thread %zu started\n", _worker_id);
     });
@@ -352,8 +353,9 @@ bool TohtnMultiJob::appl_isDestructible() {
 
     // Ensure everything has been sent off before termination
     communicate();
-    std::unique_lock out_msg_lock{_out_msg_mutex};
 
+    std::unique_lock out_msg_lock{_out_msg_mutex};
+    LOG(V2_INFO, "Worker is destructible: %s\n", _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty() ? "true" : "false");
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty();
 }
 
@@ -364,6 +366,7 @@ void TohtnMultiJob::appl_memoryPanic() {
 
 TohtnMultiJob::~TohtnMultiJob() {
     /*LOG(V2_INFO, "Work Thread %zu destroyed\n", _worker_id);*/
+    LOG(V2_INFO, "Worker destroyed\n");
     _init_thread.join();
     _work_thread.join();
 }
