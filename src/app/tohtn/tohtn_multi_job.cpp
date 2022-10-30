@@ -352,7 +352,7 @@ bool TohtnMultiJob::appl_isDestructible() {
         bool_to_str(_did_terminate.load()));*/
 
     // Ensure everything has been sent off before termination
-    communicate();
+    appl_communicate();
 
     std::unique_lock out_msg_lock{_out_msg_mutex};
     LOG(V2_INFO, "Job %d Worker is destructible: init joinable %s, work thread joinable: %s, did terminate: %s, syncer destructible: %s, out msgs empty: %s\n", getDescription().getId(), bts(_init_thread.joinable()), bts(_work_thread.joinable()), bts(_did_terminate.load()), bts(_syncer.is_destructible()), bts(_out_msgs.empty()));
