@@ -125,7 +125,7 @@ void TohtnMultiJob::appl_start() {
                 }
 
                 if (_should_suspend.load()) {
-                    LOG(V2_INFO, "Job %d did suspend", getId());
+                    LOG(V2_INFO, "Job %d did suspend\n", getId());
                     _worker->clear();
 
                     auto root_msg{_worker->get_local_root_message(getJobComm().getRanklist())};
@@ -153,7 +153,7 @@ void TohtnMultiJob::appl_start() {
 }
 
 void TohtnMultiJob::appl_suspend() {
-    LOG(V2_INFO, "Job %d should suspend\n");
+    LOG(V2_INFO, "Job %d should suspend\n", getId());
     if (_should_terminate.load()) {
         return;
     }
