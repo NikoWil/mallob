@@ -342,11 +342,11 @@ void TohtnMultiJob::appl_dumpStats() {
 bool TohtnMultiJob::appl_isDestructible() {
     // TODO: protect call to _worker->is_destructible()
 
-    /*auto bool_to_str = [](bool b) {
+    auto bts = [](bool b) {
         return b ? "true" : "false";
     };
 
-    LOG(V2_INFO,
+    /*LOG(V2_INFO,
         "Work Thread %zu, _init_thread joinable: %s, _work_thread joinable: %s, _did_terminate: %s\n",
         _worker_id, bool_to_str(_init_thread.joinable()), bool_to_str(_work_thread.joinable()),
         bool_to_str(_did_terminate.load()));*/
@@ -355,7 +355,7 @@ bool TohtnMultiJob::appl_isDestructible() {
     communicate();
 
     std::unique_lock out_msg_lock{_out_msg_mutex};
-    LOG(V2_INFO, "Job %d Worker is destructible: %s\n", getDescription().getId(), _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty() ? "true" : "false");
+    LOG(V2_INFO, "Job %d Worker is destructible: init joinable %s, work thread joinable: %s, did terminate: %s, syncer destructible: %s, out msgs empty: %s\n", getDescription().getId(), bts(_init_thread.joinable()), bts(_work_thread.joinable()), bts(_did_terminate.load()), bts(_syncer.is_destructible()), bts(_out_msgs.empty()));
     return _init_thread.joinable() && _work_thread.joinable() && _did_terminate.load() && _syncer.is_destructible() && _out_msgs.empty();
 }
 
