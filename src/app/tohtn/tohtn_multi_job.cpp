@@ -126,13 +126,6 @@ void TohtnMultiJob::appl_start() {
 
                 if (_should_suspend.load()) {
                     LOG(V2_INFO, "Job %d did suspend\n", getId());
-                    _worker->clear();
-
-                    auto root_msg{_worker->get_local_root_message(getJobComm().getRanklist())};
-                    if (root_msg.has_value()) {
-                        std::unique_lock out_msg_lock{_out_msg_mutex};
-                        _out_msgs.push_back(root_msg.value());
-                    }
 
                     std::mutex token_mutex{};
                     std::unique_lock token_lock{token_mutex};
@@ -142,6 +135,12 @@ void TohtnMultiJob::appl_start() {
                 // check for termination
                 if (_should_terminate.load()) {
                     _did_terminate.store(true);
+
+                    auto root_msg{_worker->get_local_root_message(getJobComm().getRanklist())};
+                    if (root_msg.has_value()) {
+                        std::unique_lock out_msg_lock{_out_msg_mutex};
+                        _out_msgs.push_back(root_msg.value());
+                    }
                     //LOG(V2_INFO, "Work Thread %zu terminated externally\n", _worker_id);
                     return;
                 }
